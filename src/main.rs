@@ -12,7 +12,7 @@ pub mod filepipe;
 async fn main() {
     let config = init_config(&String::from("config.lua")).unwrap();
 
-    println!("{:?}", config);
+    println!("{:#?}", config);
 
     println!("Hello, world!");
 }

@@ -1,19 +1,20 @@
 use std::collections::HashMap;
 
 #[derive(Clone, Debug)]
-pub struct RepositoryPermissionsAttribute {
+pub struct RepositoryAccessAttribute {
     pub read: bool,
     pub write: bool
 }
 
 #[derive(Clone, Debug)]
-pub struct RepositoryPermissions {
-    pub info: RepositoryPermissionsAttribute,
-    pub content: RepositoryPermissionsAttribute,
+pub struct RepositoryAccess {
+    pub info: RepositoryAccessAttribute,
+    pub content: RepositoryAccessAttribute,
 }
 
 #[derive(Clone, Debug)]
 pub struct Repository {
     pub name: String,
-    pub access: HashMap<String, RepositoryPermissions>
+    pub path: String,
+    pub access_list: HashMap<String, RepositoryAccess>
 }

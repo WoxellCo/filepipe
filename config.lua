@@ -5,3 +5,4 @@ users = {
 }
 
 repository_list = "/etc/filepipe/repositories.lua"
+repository_list = "repositories.lua"

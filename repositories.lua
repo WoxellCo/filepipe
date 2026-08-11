@@ -2,10 +2,10 @@ repositories = {}
 
 repositories["repository-name"] = {
     path = "/var/www/woxell.co",
-    access = {}
+    access_list = {}
 }
 
-repositories.access["name"] = {
-    info = { r = true, w = false },
-    content = { r = true, w = true }
+repositories["repository-name"].access_list["name"] = {
+    info = { read = true, write = false },
+    content = { read = true, write = true }
 }

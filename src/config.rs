@@ -1,6 +1,6 @@
-use std::{collections::HashMap, fs::read_to_string, vec};
-use mlua::{Error::SyntaxError, Lua, StdLib, Table};
-use crate::{filepipe::Repository};
+use std::{collections::HashMap, fs::read_to_string, println, vec};
+use mlua::{Error::*, Lua, StdLib, Table};
+use crate::filepipe::{Repository, RepositoryAccess, RepositoryAccessAttribute};
 
 #[derive(Clone, Debug)]
 pub struct User {
@@ -12,7 +12,7 @@ pub struct User {
 pub struct Config {
     pub users: HashMap<String, User>,
     pub repository_list_path: String,
-    //pub repositories: Vec<Repository>
+    pub repositories: HashMap<String, Repository>
 }
 
 #[derive(Clone, Debug)]
@@ -28,32 +28,81 @@ pub enum ConfigError {
     LuaErrorForConfig { message: String },
     LuaUnknownErrorForConfig,
     FailedToLoadFileForConfig { path: String },
+    InvalidRepositoryPath { repository_name: String },
 }
 
-//fn load_repository() -> Result<Repository, ConfigError> {
-    
-//}
+fn load_repository_access(_username: &String, access_values: &Table) -> RepositoryAccess {
+    let get_attributes = |section: &str| -> RepositoryAccessAttribute {
+        match access_values.get::<Table>(section) {
+            Ok(t) => RepositoryAccessAttribute {
+                read: t.get("read").unwrap_or(false),
+                write: t.get("write").unwrap_or(false)
+            },
+            Err(_) => RepositoryAccessAttribute { read: false, write: false }
+        }
+    };
 
-fn load_repositories(path: &String, lua: &Lua, mut errors: &Vec<ConfigError>) -> Result<Vec<Repository>, ConfigError> {
+    RepositoryAccess {
+        info: get_attributes("info"),
+        content: get_attributes("content")
+    }
+}
+
+fn load_repository(key: &String, repository_table: &Table) -> Result<Repository, ConfigError> {
+    let repository_path = repository_table.get::<String>("path")
+        .map_err(|_| ConfigError::InvalidRepositoryPath { repository_name: key.clone() })?;
+
+    let access_table = repository_table.get::<Table>("access_list");
+    let mut access_list = HashMap::new();
+
+    // mk: i think there's a better way to do this
+    let _ = access_table.and_then(|table| {
+        let _ = table.for_each(|k: String, v| {
+            access_list.insert(k.clone(), load_repository_access(&k, &v));
+            Ok(())
+        });
+        Ok(())
+    });
+
+    let repository = Repository { name: key.clone(), path: repository_path, access_list };
+
+    Ok(repository)
+}
+
+fn load_repositories(path: &String, lua: &Lua, errors: &mut Vec<ConfigError>) -> Result<HashMap<String, Repository>, ConfigError> {
     let content = read_to_string(path)
         .map_err(|_| ConfigError::FailedToLoadFileForRepositoryList { path: path.to_owned() })?;
 
     let chunk = lua.load(content);
-    chunk.exec()
+    chunk.exec()//.unwrap();
         .map_err(|err| {
             match err {
-                SyntaxError { message, incomplete_input: _ } => ConfigError::LuaErrorForRepositoryList { message: message },
+                SyntaxError { message, incomplete_input: _ } => ConfigError::LuaErrorForRepositoryList { message },
+                RuntimeError(message) => ConfigError::LuaErrorForRepositoryList { message },
                 _ => ConfigError::LuaUnknownErrorForRepositoryList
             }
         })?;
 
     let glob = lua.globals();
-    let repositories = glob.get::<Table>("repositories")
+    let repositories_table = glob.get::<Table>("repositories")
         .map_err(|_| ConfigError::FailedToLoadRepositoryList)?;
 
-    //repositories.for_each()
+    let mut repositories: HashMap<String, Repository> = HashMap::new();
 
-    Ok(vec![])
+    // mk: uhhhh...
+    let _ = repositories_table.for_each(|k: String, v: Table| {
+        match load_repository(&k, &v) {
+            Ok(repository) => {
+                repositories.insert(k, repository);
+            },
+            Err(err) => {
+                errors.push(err);
+            }
+        }
+        Ok(())
+    });
+
+    Ok(repositories)
 }
 
 pub fn init_config(path: &String) -> Result<Config, Vec<ConfigError>> {
@@ -115,13 +164,13 @@ pub fn init_config(path: &String) -> Result<Config, Vec<ConfigError>> {
         }
     };
 
-    /*let repositories = match load_repositories(&repository_list_path, &lua, &errors) {
+    let repositories = match load_repositories(&repository_list_path, &lua, &mut errors) {
         Ok(list) => list,
         Err(err) => {
             errors.push(err);
             return Err(errors);
         }
-    };*/
+    };
 
     if errors.len() > 0 {
         return Err(errors);
@@ -130,7 +179,7 @@ pub fn init_config(path: &String) -> Result<Config, Vec<ConfigError>> {
     let config = Config{
         users: users_map,
         repository_list_path,
-        //repositories: repositories
+        repositories: repositories
     };
     
     Ok(config)
