@@ -1,4 +1,4 @@
-use std::{collections::HashMap, fs::read_to_string, println, vec};
+use std::{collections::HashMap, fs::read_to_string, vec};
 use mlua::{Error::*, Lua, StdLib, Table};
 use crate::filepipe::{Repository, RepositoryAccess, RepositoryAccessAttribute};
 
@@ -12,7 +12,9 @@ pub struct User {
 pub struct Config {
     pub users: HashMap<String, User>,
     pub repository_list_path: String,
-    pub repositories: HashMap<String, Repository>
+    pub repositories: HashMap<String, Repository>,
+    pub address: String,
+    pub port: u16,
 }
 
 #[derive(Clone, Debug)]
@@ -29,6 +31,8 @@ pub enum ConfigError {
     LuaUnknownErrorForConfig,
     FailedToLoadFileForConfig { path: String },
     InvalidRepositoryPath { repository_name: String },
+    NoAddress,
+    NoPort,
 }
 
 fn load_repository_access(_username: &String, access_values: &Table) -> RepositoryAccess {
@@ -129,6 +133,12 @@ pub fn init_config(path: &String) -> Result<Config, Vec<ConfigError>> {
     let users = glob.get::<Table>("users")
         .map_err(|_| vec![ConfigError::FailedToLoadUsers])?;
 
+    let address = glob.get::<String>("server_address")
+        .map_err(|_| vec![ConfigError::NoAddress])?;
+
+    let port = glob.get::<u16>("server_port")
+        .map_err(|_| vec![ConfigError::NoPort])?;
+
     let mut users_map: HashMap<String, User> = HashMap::new();
 
     let _ = users.for_each(|k: String, v: Table| {
@@ -179,7 +189,9 @@ pub fn init_config(path: &String) -> Result<Config, Vec<ConfigError>> {
     let config = Config{
         users: users_map,
         repository_list_path,
-        repositories: repositories
+        repositories,
+        address,
+        port
     };
     
     Ok(config)

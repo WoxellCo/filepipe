@@ -1,3 +1,5 @@
+// info
+
 use axum::http::{HeaderMap, StatusCode};
 
 pub async fn get() -> (StatusCode, HeaderMap, String) {
