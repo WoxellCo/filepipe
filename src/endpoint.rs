@@ -1,6 +1,6 @@
 use std::{collections::HashMap, sync::{Arc, RwLock}};
 
-use axum::{Router, http::HeaderValue, routing::get};
+use axum::{Router, http::HeaderValue, routing::{get, post}};
 use tokio::fs::File;
 use crate::{config::Config, filepipe::Repository};
 
@@ -12,7 +12,7 @@ pub mod ss;
 #[derive(Clone, PartialEq)]
 pub enum StreamType {
     DownStream,
-    UpStram,
+    UpStream,
 }
 
 #[derive(Clone)]
@@ -38,6 +38,10 @@ pub fn routes() -> Router<AppState> {
             get(ss::get)
             .post(i::post)
             .put(i::post)
+        )
+        .route("/hu/{name}",
+            post(hu::post)
+            .put(hu::put)
         )
 }
 

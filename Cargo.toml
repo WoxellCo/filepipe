@@ -26,3 +26,4 @@ tower = "0.5.3"
 
 mlua = { version = "0.12.0", features = ["lua55", "vendored", "async", "send"] }
 xxh3 = "0.1.1"
+cargo-watch = "8.5.3"
