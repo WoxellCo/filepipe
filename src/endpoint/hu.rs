@@ -2,7 +2,7 @@
 
 use axum::{
     Json,
-    extract::State,
+    extract::{Path, State},
     http::{HeaderMap, StatusCode, header::CONTENT_TYPE},
 };
 use serde::Deserialize;
@@ -25,12 +25,60 @@ pub struct PutReq {
 
 // new upload stream request
 pub async fn post(
-    State(state): State<super::AppState>,
-    Json(payload): Json<PostReq>,
+    State(mut state): State<super::AppState>,
+    headers: HeaderMap,
+    Path(name): Path<String>,
+    //Json(payload): Json<PostReq>,
 ) -> (StatusCode, HeaderMap, String) {
-    let mut header_out = HeaderMap::new();
+    let mut headers_out = HeaderMap::new();
+    headers_out.insert(CONTENT_TYPE, "application/json".parse().unwrap());
 
-    (StatusCode::OK, header_out, String::from(""))
+    let auth = headers.get("authorization");
+
+    //todo!("retreive the user from the access key and check permissions");
+    if auth.unwrap() != "123" {
+        return (
+            StatusCode::FORBIDDEN,
+            headers_out,
+            json!({"error": "invalid auth key"}).to_string(),
+        );
+    }
+
+    {
+        let sessions = state.sessions.read().await;
+        println!("beg1");
+        for session in sessions.iter() {
+            println!("{:?}", session);
+        }
+    }
+    println!("end1");
+
+    let new_session_key = match state.register_upstream_session(name.as_str()).await {
+        Ok(key) => key,
+        Err(()) => {
+            return (
+                StatusCode::FORBIDDEN,
+                headers_out,
+                json!({"error": "there is already an active upstream session for this repository"})
+                    .to_string(),
+            );
+        }
+    };
+
+    {
+        let sessions = state.sessions.read().await;
+        println!("beg2");
+        for session in sessions.iter() {
+            println!("{:?}", session);
+        }
+        println!("end2");
+    }
+
+    (
+        StatusCode::OK,
+        headers_out,
+        json!({"key": new_session_key}).to_string(),
+    )
 }
 
 // once the server accepts the upload stream request, the client should send the files information and their size with the hash to initialize the writing process

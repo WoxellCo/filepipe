@@ -62,23 +62,21 @@ pub async fn get(
     let auth = headers.get("authorization");
 
     // TEST ONLY //
-    state.sessions.insert(
+    /*state.sessions.insert(
         String::from("123"),
         Session {
             stream_type: StreamType::DownStream,
-            repository: Arc::new(
-                state
-                    .config
-                    .repositories
-                    .get("repository-name")
-                    .unwrap()
-                    .clone(),
-            ),
+            repository: state
+                .config
+                .repositories
+                .get("repository-name")
+                .unwrap()
+                .clone(),
         },
-    );
+    );*/
     ///////////////
 
-    let session = match state.get_session_by_key_in_header_value(auth) {
+    let session = match state.get_session_by_key_in_header_value(auth).await {
         Some(session) => session,
         None => {
             headers_out.insert(CONTENT_TYPE, "application/json".parse().unwrap());
@@ -172,23 +170,21 @@ pub async fn post(
     let auth = headers.get("authorization");
 
     // TEST ONLY //
-    state.sessions.insert(
+    /*state.sessions.insert(
         String::from("123"),
         Session {
             stream_type: StreamType::UpStream,
-            repository: Arc::new(
-                state
-                    .config
-                    .repositories
-                    .get("repository-name")
-                    .unwrap()
-                    .clone(),
-            ),
+            repository: state
+                .config
+                .repositories
+                .get("repository-name")
+                .unwrap()
+                .clone(),
         },
-    );
+    );*/
     ///////////////
 
-    let session = match state.get_session_by_key_in_header_value(auth) {
+    let session = match state.get_session_by_key_in_header_value(auth).await {
         Some(session) => session,
         None => {
             headers_out.insert(CONTENT_TYPE, "application/json".parse().unwrap());

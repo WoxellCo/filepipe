@@ -1,18 +1,18 @@
-use std::{collections::HashMap, fs::read_to_string, vec};
-use mlua::{Error::*, Lua, StdLib, Table};
 use crate::filepipe::{Repository, RepositoryAccess, RepositoryAccessAttribute};
+use mlua::{Error::*, Lua, StdLib, Table};
+use std::{collections::HashMap, fs::read_to_string, sync::Arc, vec};
 
 #[derive(Clone, Debug)]
 pub struct User {
     pub name: String,
-    pub pub_key_path: String
+    pub pub_key_path: String,
 }
 
 #[derive(Clone, Debug)]
 pub struct Config {
     pub users: HashMap<String, User>,
     pub repository_list_path: String,
-    pub repositories: HashMap<String, Repository>,
+    pub repositories: HashMap<String, Arc<Repository>>,
     pub address: String,
     pub port: u16,
 }
@@ -40,21 +40,28 @@ fn load_repository_access(_username: &String, access_values: &Table) -> Reposito
         match access_values.get::<Table>(section) {
             Ok(t) => RepositoryAccessAttribute {
                 read: t.get("read").unwrap_or(false),
-                write: t.get("write").unwrap_or(false)
+                write: t.get("write").unwrap_or(false),
             },
-            Err(_) => RepositoryAccessAttribute { read: false, write: false }
+            Err(_) => RepositoryAccessAttribute {
+                read: false,
+                write: false,
+            },
         }
     };
 
     RepositoryAccess {
         info: get_attributes("info"),
-        content: get_attributes("content")
+        content: get_attributes("content"),
     }
 }
 
 fn load_repository(key: &String, repository_table: &Table) -> Result<Repository, ConfigError> {
-    let repository_path = repository_table.get::<String>("path")
-        .map_err(|_| ConfigError::InvalidRepositoryPath { repository_name: key.clone() })?;
+    let repository_path =
+        repository_table
+            .get::<String>("path")
+            .map_err(|_| ConfigError::InvalidRepositoryPath {
+                repository_name: key.clone(),
+            })?;
 
     let access_table = repository_table.get::<Table>("access_list");
     let mut access_list = HashMap::new();
@@ -68,37 +75,50 @@ fn load_repository(key: &String, repository_table: &Table) -> Result<Repository,
         Ok(())
     });
 
-    let repository = Repository { name: key.clone(), path: repository_path, access_list };
+    let repository = Repository {
+        name: key.clone(),
+        path: repository_path,
+        access_list,
+    };
 
     Ok(repository)
 }
 
-fn load_repositories(path: &String, lua: &Lua, errors: &mut Vec<ConfigError>) -> Result<HashMap<String, Repository>, ConfigError> {
-    let content = read_to_string(path)
-        .map_err(|_| ConfigError::FailedToLoadFileForRepositoryList { path: path.to_owned() })?;
+fn load_repositories(
+    path: &String,
+    lua: &Lua,
+    errors: &mut Vec<ConfigError>,
+) -> Result<HashMap<String, Arc<Repository>>, ConfigError> {
+    let content =
+        read_to_string(path).map_err(|_| ConfigError::FailedToLoadFileForRepositoryList {
+            path: path.to_owned(),
+        })?;
 
     let chunk = lua.load(content);
-    chunk.exec()//.unwrap();
-        .map_err(|err| {
-            match err {
-                SyntaxError { message, incomplete_input: _ } => ConfigError::LuaErrorForRepositoryList { message },
-                RuntimeError(message) => ConfigError::LuaErrorForRepositoryList { message },
-                _ => ConfigError::LuaUnknownErrorForRepositoryList
-            }
+    chunk
+        .exec() //.unwrap();
+        .map_err(|err| match err {
+            SyntaxError {
+                message,
+                incomplete_input: _,
+            } => ConfigError::LuaErrorForRepositoryList { message },
+            RuntimeError(message) => ConfigError::LuaErrorForRepositoryList { message },
+            _ => ConfigError::LuaUnknownErrorForRepositoryList,
         })?;
 
     let glob = lua.globals();
-    let repositories_table = glob.get::<Table>("repositories")
+    let repositories_table = glob
+        .get::<Table>("repositories")
         .map_err(|_| ConfigError::FailedToLoadRepositoryList)?;
 
-    let mut repositories: HashMap<String, Repository> = HashMap::new();
+    let mut repositories: HashMap<String, Arc<Repository>> = HashMap::new();
 
     // mk: uhhhh...
     let _ = repositories_table.for_each(|k: String, v: Table| {
         match load_repository(&k, &v) {
             Ok(repository) => {
-                repositories.insert(k, repository);
-            },
+                repositories.insert(k, Arc::new(repository));
+            }
             Err(err) => {
                 errors.push(err);
             }
@@ -114,29 +134,35 @@ pub fn init_config(path: &String) -> Result<Config, Vec<ConfigError>> {
 
     let lua = Lua::new();
 
-    let content = read_to_string(path)
-        .map_err(|_| vec![ConfigError::FailedToLoadFileForConfig { path: path.to_owned() }])?;
+    let content = read_to_string(path).map_err(|_| {
+        vec![ConfigError::FailedToLoadFileForConfig {
+            path: path.to_owned(),
+        }]
+    })?;
 
     let chunk = lua.load(content);
-    chunk.exec()
-        .map_err(|err| {
-            match err {
-                SyntaxError { message, incomplete_input: _ } => vec![ConfigError::LuaErrorForConfig { message: message }],
-                _ => vec![ConfigError::LuaUnknownErrorForConfig]
-            }
-        })?;
+    chunk.exec().map_err(|err| match err {
+        SyntaxError {
+            message,
+            incomplete_input: _,
+        } => vec![ConfigError::LuaErrorForConfig { message }],
+        _ => vec![ConfigError::LuaUnknownErrorForConfig],
+    })?;
 
     lua.load_std_libs(StdLib::ALL_SAFE)
         .map_err(|_| vec![ConfigError::FailedToLoadLuaLibs])?;
 
     let glob = lua.globals();
-    let users = glob.get::<Table>("users")
+    let users = glob
+        .get::<Table>("users")
         .map_err(|_| vec![ConfigError::FailedToLoadUsers])?;
 
-    let address = glob.get::<String>("server_address")
+    let address = glob
+        .get::<String>("server_address")
         .map_err(|_| vec![ConfigError::NoAddress])?;
 
-    let port = glob.get::<u16>("server_port")
+    let port = glob
+        .get::<u16>("server_port")
         .map_err(|_| vec![ConfigError::NoPort])?;
 
     let mut users_map: HashMap<String, User> = HashMap::new();
@@ -144,9 +170,7 @@ pub fn init_config(path: &String) -> Result<Config, Vec<ConfigError>> {
     let _ = users.for_each(|k: String, v: Table| {
         let mut user_pub_key_path: Option<String> = None;
         match v.get::<String>("pub_key_path") {
-            Ok(user_key) => {
-                user_pub_key_path = Some(user_key)
-            },
+            Ok(user_key) => user_pub_key_path = Some(user_key),
             Err(_) => {
                 // mk: no need to clone? because in this case it returns before `k` is used again? but it errors so...
                 errors.push(ConfigError::InvalidUserPubKeyPath { name: k.clone() });
@@ -159,13 +183,16 @@ pub fn init_config(path: &String) -> Result<Config, Vec<ConfigError>> {
             }
         };
         // mk: handle other attribs here or idk, but do it before inserting into the hashmap
-        users_map.insert(k.clone(), User{
-            name: k,
-            pub_key_path: user_pub_key_path
-        });
+        users_map.insert(
+            k.clone(),
+            User {
+                name: k,
+                pub_key_path: user_pub_key_path,
+            },
+        );
         Ok(())
     });
-    
+
     let repository_list_path = match glob.get::<String>("repository_list") {
         Ok(path) => path,
         Err(_) => {
@@ -186,13 +213,13 @@ pub fn init_config(path: &String) -> Result<Config, Vec<ConfigError>> {
         return Err(errors);
     }
 
-    let config = Config{
+    let config = Config {
         users: users_map,
         repository_list_path,
         repositories,
         address,
-        port
+        port,
     };
-    
+
     Ok(config)
 }
