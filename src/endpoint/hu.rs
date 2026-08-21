@@ -25,7 +25,7 @@ pub struct PutReq {
 
 // new upload stream request
 pub async fn post(
-    State(mut state): State<super::AppState>,
+    State(state): State<super::AppState>,
     headers: HeaderMap,
     Path(name): Path<String>,
     //Json(payload): Json<PostReq>,
@@ -36,22 +36,6 @@ pub async fn post(
     let auth = headers.get("authorization");
 
     //todo!("retreive the user from the access key and check permissions");
-    if auth.unwrap() != "123" {
-        return (
-            StatusCode::FORBIDDEN,
-            headers_out,
-            json!({"error": "invalid auth key"}).to_string(),
-        );
-    }
-
-    {
-        let sessions = state.sessions.read().await;
-        println!("beg1");
-        for session in sessions.iter() {
-            println!("{:?}", session);
-        }
-    }
-    println!("end1");
 
     let new_session_key = match state.register_upstream_session(name.as_str()).await {
         Ok(key) => key,
@@ -64,15 +48,6 @@ pub async fn post(
             );
         }
     };
-
-    {
-        let sessions = state.sessions.read().await;
-        println!("beg2");
-        for session in sessions.iter() {
-            println!("{:?}", session);
-        }
-        println!("end2");
-    }
 
     (
         StatusCode::OK,

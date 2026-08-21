@@ -1,19 +1,21 @@
 use std::{collections::HashMap, sync::Arc};
 
+use chrono::{DateTime, Utc};
 use tokio::sync::RwLock;
 
 use crate::{
-    config::Config,
+    config::{Config, User},
     filepipe::{Repository, RepositoryAccess},
     key_gen,
 };
 use axum::{
     Router,
     http::HeaderValue,
-    routing::{get, post},
+    routing::{get, post, put},
 };
 use tokio::fs::File;
 
+pub mod a;
 pub mod hd;
 pub mod hu;
 pub mod i;
@@ -31,11 +33,21 @@ pub struct Session {
     pub repository: Arc<Repository>,
 }
 
+// authentication process, before the session key the server gives to the client an access key challenge the client has to sign
+#[derive(Clone, Debug)]
+pub struct AccessKey {
+    //token: String,
+    user: Arc<User>,
+    signed: bool,
+    expire: DateTime<Utc>,
+}
+
 #[derive(Clone)]
 pub struct AppState {
     pub config: Config,
     //pub open_read_files: Arc<RwLock<HashMap<String, File>>>, // mk: yeah doing this later
     pub sessions: Arc<RwLock<HashMap<String, Session>>>,
+    pub access_keys: Arc<RwLock<HashMap<String, AccessKey>>>,
 }
 
 impl AppState {
@@ -97,6 +109,8 @@ impl AppState {
 
 pub fn routes() -> Router<AppState> {
     Router::new()
+        .route("/a", put(a::put))
+        .route("/a/{username}", post(a::post))
         .route("/i/{name}", get(i::get).post(i::post))
         .route(
             "/ss/{name}/{*path}",

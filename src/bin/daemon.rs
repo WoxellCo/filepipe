@@ -4,21 +4,19 @@ use axum::Router;
 use tokio::{fs::File, sync::RwLock};
 use tower_http::cors::{Any, CorsLayer};
 
-use crate::config::init_config;
-
-pub mod aio;
-pub mod config;
-pub mod endpoint;
-pub mod filepipe;
-pub mod key_gen;
+use filepipe::config::init_config;
 
 #[tokio::main]
 async fn main() {
+    unsafe {
+        std::env::set_var("RUST_BACKTRACE", "1");
+    }
     let config = init_config(&String::from("config.lua")).unwrap();
-    let state = endpoint::AppState {
+    let state = filepipe::endpoint::AppState {
         config,
         //open_read_files: Arc::new(RwLock::new(HashMap::new()))
         sessions: Arc::new(RwLock::new(HashMap::new())),
+        access_keys: Arc::new(RwLock::new(HashMap::new())),
     };
 
     println!("{:#?}", state.config);
@@ -38,7 +36,7 @@ async fn main() {
         .allow_headers(Any);
 
     let router: Router = Router::new()
-        .merge(endpoint::routes())
+        .merge(filepipe::endpoint::routes())
         .with_state(state)
         .layer(cors);
 

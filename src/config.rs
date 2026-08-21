@@ -1,4 +1,7 @@
-use crate::filepipe::{Repository, RepositoryAccess, RepositoryAccessAttribute};
+use crate::{
+    filepipe::{Repository, RepositoryAccess, RepositoryAccessAttribute},
+    key_gen::parse_ssh_ed25519_pubkey,
+};
 use mlua::{Error::*, Lua, StdLib, Table};
 use std::{collections::HashMap, fs::read_to_string, sync::Arc, vec};
 
@@ -6,11 +9,12 @@ use std::{collections::HashMap, fs::read_to_string, sync::Arc, vec};
 pub struct User {
     pub name: String,
     pub pub_key_path: String,
+    pub pub_key: [u8; 32],
 }
 
 #[derive(Clone, Debug)]
 pub struct Config {
-    pub users: HashMap<String, User>,
+    pub users: HashMap<String, Arc<User>>,
     pub repository_list_path: String,
     pub repositories: HashMap<String, Arc<Repository>>,
     pub address: String,
@@ -33,6 +37,8 @@ pub enum ConfigError {
     InvalidRepositoryPath { repository_name: String },
     NoAddress,
     NoPort,
+    FailedToLoadPublicKey,
+    FailedToParsePublicKey,
 }
 
 fn load_repository_access(_username: &String, access_values: &Table) -> RepositoryAccess {
@@ -67,12 +73,12 @@ fn load_repository(key: &String, repository_table: &Table) -> Result<Repository,
     let mut access_list = HashMap::new();
 
     // mk: i think there's a better way to do this
-    let _ = access_table.and_then(|table| {
+    // mk (updated): uhmmm...
+    let _ = access_table.map(|table| {
         let _ = table.for_each(|k: String, v| {
             access_list.insert(k.clone(), load_repository_access(&k, &v));
             Ok(())
         });
-        Ok(())
     });
 
     let repository = Repository {
@@ -165,7 +171,7 @@ pub fn init_config(path: &String) -> Result<Config, Vec<ConfigError>> {
         .get::<u16>("server_port")
         .map_err(|_| vec![ConfigError::NoPort])?;
 
-    let mut users_map: HashMap<String, User> = HashMap::new();
+    let mut users_map: HashMap<String, Arc<User>> = HashMap::new();
 
     let _ = users.for_each(|k: String, v: Table| {
         let mut user_pub_key_path: Option<String> = None;
@@ -179,16 +185,34 @@ pub fn init_config(path: &String) -> Result<Config, Vec<ConfigError>> {
         let user_pub_key_path = match user_pub_key_path {
             Some(pub_key_path) => pub_key_path,
             None => {
+                errors.push(ConfigError::FailedToLoadPublicKey);
                 return Ok(());
             }
         };
+
+        let pub_key = read_to_string(&user_pub_key_path);
+        let pub_key = match pub_key {
+            Ok(key) => match parse_ssh_ed25519_pubkey(key.as_str()) {
+                Ok(key) => key,
+                Err(_) => {
+                    errors.push(ConfigError::FailedToParsePublicKey);
+                    return Ok(());
+                }
+            },
+            Err(_) => {
+                errors.push(ConfigError::FailedToLoadPublicKey);
+                return Ok(());
+            }
+        };
+
         // mk: handle other attribs here or idk, but do it before inserting into the hashmap
         users_map.insert(
             k.clone(),
-            User {
+            Arc::new(User {
                 name: k,
                 pub_key_path: user_pub_key_path,
-            },
+                pub_key,
+            }),
         );
         Ok(())
     });
@@ -209,7 +233,7 @@ pub fn init_config(path: &String) -> Result<Config, Vec<ConfigError>> {
         }
     };
 
-    if errors.len() > 0 {
+    if !errors.is_empty() {
         return Err(errors);
     }
 
