@@ -9,7 +9,7 @@ use serde::Deserialize;
 use serde_json::json;
 
 use super::AppState;
-use crate::filepipe::{RepositoryFile, extract_path_dir_and_name};
+use filepipe::filepipe::{RepositoryFile, extract_path_dir_and_name};
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]

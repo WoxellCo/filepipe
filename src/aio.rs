@@ -2,7 +2,6 @@ use std::io::SeekFrom;
 use tokio::fs::File;
 use tokio::io::{AsyncReadExt, AsyncSeekExt};
 
-use crate::endpoint::AppState;
 
 pub async fn read_chunk(
     //state: Option<&AppState>,

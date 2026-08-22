@@ -1,9 +1,9 @@
-use crate::{
-    filepipe::{Repository, RepositoryAccess, RepositoryAccessAttribute},
-    key_gen::parse_ssh_ed25519_pubkey,
-};
 use mlua::{Error::*, Lua, StdLib, Table};
 use std::{collections::HashMap, fs::read_to_string, sync::Arc, vec};
+use {
+    filepipe::filepipe::{Repository, RepositoryAccess, RepositoryAccessAttribute},
+    filepipe::key_gen::parse_ssh_ed25519_pub_key,
+};
 
 #[derive(Clone, Debug)]
 pub struct User {
@@ -147,6 +147,10 @@ pub fn init_config(path: &String) -> Result<Config, Vec<ConfigError>> {
     })?;
 
     let chunk = lua.load(content);
+
+    lua.load_std_libs(StdLib::ALL_SAFE)
+        .map_err(|_| vec![ConfigError::FailedToLoadLuaLibs])?;
+
     chunk.exec().map_err(|err| match err {
         SyntaxError {
             message,
@@ -154,9 +158,6 @@ pub fn init_config(path: &String) -> Result<Config, Vec<ConfigError>> {
         } => vec![ConfigError::LuaErrorForConfig { message }],
         _ => vec![ConfigError::LuaUnknownErrorForConfig],
     })?;
-
-    lua.load_std_libs(StdLib::ALL_SAFE)
-        .map_err(|_| vec![ConfigError::FailedToLoadLuaLibs])?;
 
     let glob = lua.globals();
     let users = glob
@@ -192,7 +193,7 @@ pub fn init_config(path: &String) -> Result<Config, Vec<ConfigError>> {
 
         let pub_key = read_to_string(&user_pub_key_path);
         let pub_key = match pub_key {
-            Ok(key) => match parse_ssh_ed25519_pubkey(key.as_str()) {
+            Ok(key) => match parse_ssh_ed25519_pub_key(key.as_str()) {
                 Ok(key) => key,
                 Err(_) => {
                     errors.push(ConfigError::FailedToParsePublicKey);

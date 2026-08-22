@@ -21,7 +21,7 @@ pub fn verify_signature(
     verifying_key.verify(message, &signature)
 }
 
-pub fn parse_ssh_ed25519_pubkey(line: &str) -> Result<[u8; 32], ssh_key::Error> {
+pub fn parse_ssh_ed25519_pub_key(line: &str) -> Result<[u8; 32], ssh_key::Error> {
     let public_key = PublicKey::from_openssh(line)?;
     let ed25519_key = public_key
         .key_data()
