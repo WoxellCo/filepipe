@@ -74,19 +74,16 @@ pub async fn put(
     let headers_out = HeaderMap::new();
 
     let key = match headers.get("authorization") {
-        Some(key) => {
-            let key = match key.to_str() {
-                Ok(key) => key,
-                Err(_) => {
-                    return (
-                        StatusCode::INTERNAL_SERVER_ERROR,
-                        headers_out,
-                        String::new(),
-                    );
-                }
-            };
-            key
-        }
+        Some(key) => match key.to_str() {
+            Ok(key) => key,
+            Err(_) => {
+                return (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    headers_out,
+                    String::new(),
+                );
+            }
+        },
         None => {
             return (StatusCode::UNAUTHORIZED, headers_out, String::new());
         }

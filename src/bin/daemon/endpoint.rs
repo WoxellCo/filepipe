@@ -1,6 +1,7 @@
 use std::{collections::HashMap, sync::Arc};
 
 use chrono::{DateTime, Utc};
+use filepipe::filepipe::StreamType;
 use tokio::sync::RwLock;
 
 use axum::{
@@ -20,12 +21,6 @@ pub mod hd;
 pub mod hu;
 pub mod i;
 pub mod ss;
-
-#[derive(Clone, PartialEq, Debug)]
-pub enum StreamType {
-    DownStream,
-    UpStream,
-}
 
 #[derive(Clone, Debug)]
 pub struct Session {

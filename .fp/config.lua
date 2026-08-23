@@ -9,13 +9,13 @@ bindings = {
     media = {
         local_path = "assets/media",
         remote_repository_name = "repository-name",
-        remote_address = "https://127.0.0.1:32879",
+        remote_address = "http://127.0.0.1:32879",
         default_user = "mk" --string or object, can be both
     },
-    publish = {
+    deploy = {
         local_path = "out",
         remote_repository_name = "woxell.co",
-        remote_address = "https://127.0.0.1:32879",
+        remote_address = "http://127.0.0.1:32879",
         default_user = "mk" --string or object, can be both
     }
 }

@@ -33,6 +33,12 @@ pub struct RepositoryFile {
     pub hash: String,
 }
 
+#[derive(Clone, PartialEq, Debug)]
+pub enum StreamType {
+    DownStream,
+    UpStream,
+}
+
 pub fn extract_path_dir_and_name(path: &str) -> (String, String) {
     match path.rsplit_once('/') {
         Some((dir, name)) => (dir.to_owned(), name.to_owned()),

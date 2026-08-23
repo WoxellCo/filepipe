@@ -1,4 +1,4 @@
-use mlua::{Error::*, Lua, StdLib, Table};
+use mlua::{Error::*, Lua, StdLib, Table, Value};
 use std::{collections::HashMap, fs::read_to_string, sync::Arc};
 
 use ed25519_dalek::SigningKey;
@@ -8,7 +8,7 @@ pub struct Binding {
     pub local_path: String,
     pub remote_address: String,
     pub remote_repository_name: String,
-    pub user: Arc<User>,
+    pub default_user: Arc<User>,
 }
 
 #[derive(Clone, Debug)]
@@ -24,6 +24,7 @@ pub struct Config {
     pub bindings: HashMap<String, Arc<Binding>>,
 }
 
+#[derive(Clone, Debug)]
 pub enum ConfigError {
     FailedToLoadFileForConfig { path: String },
     FailedToLoadLuaLibs,
@@ -33,6 +34,13 @@ pub enum ConfigError {
     LuaInvalidBindingsValue,
     LuaInvalidUserRemoteUsernameValue { name: String },
     LuaInvalidUserPrivKeyPathValue { name: String },
+    LuaInvalidBindingLocalPathValue { name: String },
+    LuaInvalidBindingRemoteRepositoryNameValue { name: String },
+    LuaInvalidBindingRemoteAddressValue { name: String },
+    LuaInvalidBindingDefaultUserValue { name: String },
+    LuaUserNotExistentForBinding { name: String, username: String },
+    LuaUserInvalidObjectForBinding { name: String },
+    LuaInvalidBindingDefaultUserValueType { name: String },
 }
 
 pub fn load_user(name: &String, v: &Table) -> Result<User, ConfigError> {
@@ -94,6 +102,7 @@ pub fn init_config(path: &String) -> Result<Config, Vec<ConfigError>> {
         .map_err(|_| vec![ConfigError::LuaInvalidBindingsValue])?;
 
     let mut users_map: HashMap<String, Arc<User>> = HashMap::new();
+    let mut bindings_map: HashMap<String, Arc<Binding>> = HashMap::new();
 
     let _ = users.for_each(|k: String, v: Table| {
         let user = match load_user(&k, &v) {
@@ -108,9 +117,85 @@ pub fn init_config(path: &String) -> Result<Config, Vec<ConfigError>> {
         Ok(())
     });
 
+    let _ = bindings.for_each(|k: String, v: Table| {
+        let local_path = match v.get::<String>("local_path") {
+            Ok(value) => value,
+            Err(_) => {
+                errors.push(ConfigError::LuaInvalidBindingLocalPathValue { name: k });
+                return Ok(());
+            }
+        };
+
+        let remote_repository_name = match v.get::<String>("remote_repository_name") {
+            Ok(value) => value,
+            Err(_) => {
+                errors.push(ConfigError::LuaInvalidBindingRemoteRepositoryNameValue { name: k });
+                return Ok(());
+            }
+        };
+
+        let remote_address = match v.get::<String>("remote_address") {
+            Ok(value) => value,
+            Err(_) => {
+                errors.push(ConfigError::LuaInvalidBindingRemoteAddressValue { name: k });
+                return Ok(());
+            }
+        };
+
+        let default_user: Value = match v.get("default_user") {
+            Ok(value) => value,
+            Err(_) => {
+                errors.push(ConfigError::LuaInvalidBindingDefaultUserValue { name: k });
+                return Ok(());
+            }
+        };
+
+        let default_user = match default_user {
+            Value::String(username) => {
+                let username = username.to_string_lossy();
+
+                match users_map.get(&username) {
+                    Some(user) => user.clone(),
+                    None => {
+                        errors
+                            .push(ConfigError::LuaUserNotExistentForBinding { name: k, username });
+                        return Ok(());
+                    }
+                }
+            }
+            Value::Table(user) => {
+                let user = match load_user(&"<anon>".to_string(), &user) {
+                    Ok(user) => user,
+                    Err(_) => {
+                        // mk: it would be nice to find a way to put the output error in there
+                        errors.push(ConfigError::LuaUserInvalidObjectForBinding { name: k });
+                        return Ok(());
+                    }
+                };
+                Arc::new(user)
+            }
+            _ => {
+                errors.push(ConfigError::LuaInvalidBindingDefaultUserValueType { name: k });
+                return Ok(());
+            }
+        };
+
+        bindings_map.insert(
+            k,
+            Arc::new(Binding {
+                local_path,
+                remote_repository_name,
+                remote_address,
+                default_user,
+            }),
+        );
+
+        Ok(())
+    });
+
     let config = Config {
         users: users_map,
-        bindings: HashMap::new(),
+        bindings: bindings_map,
     };
 
     Ok(config)
