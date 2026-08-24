@@ -1,7 +1,12 @@
 use mlua::{Error::*, Lua, StdLib, Table, Value};
-use std::{collections::HashMap, fs::read_to_string, sync::Arc};
+use std::{
+    collections::HashMap,
+    fs::{self, read_to_string},
+    io::Read,
+    sync::Arc,
+};
 
-use ed25519_dalek::SigningKey;
+use ed25519_dalek::{SigningKey, pkcs8::DecodePrivateKey};
 
 #[derive(Clone, Debug)]
 pub struct Binding {
@@ -41,6 +46,8 @@ pub enum ConfigError {
     LuaUserNotExistentForBinding { name: String, username: String },
     LuaUserInvalidObjectForBinding { name: String },
     LuaInvalidBindingDefaultUserValueType { name: String },
+    FailedToOpenKeyFile { name: String },
+    FailedToSerializeSigningKey { name: String },
 }
 
 pub fn load_user(name: &String, v: &Table) -> Result<User, ConfigError> {
@@ -63,6 +70,27 @@ pub fn load_user(name: &String, v: &Table) -> Result<User, ConfigError> {
             return Err(ConfigError::LuaInvalidUserPrivKeyPathValue { name: name.clone() });
         }
     };
+
+    // mk: i will use from `std` for now, but considering using `tokio`, depends...
+    let mut priv_key_file = match fs::File::open(&user.priv_key_path) {
+        Ok(f) => f,
+        Err(_) => {
+            return Err(ConfigError::FailedToOpenKeyFile { name: name.clone() });
+        }
+    };
+
+    let mut priv_key: String = String::new();
+    let _ = priv_key_file.read_to_string(&mut priv_key);
+
+    let priv_key = SigningKey::from_pkcs8_pem(&priv_key);
+    let priv_key = match priv_key {
+        Ok(key) => key,
+        Err(_) => {
+            return Err(ConfigError::FailedToSerializeSigningKey { name: name.clone() });
+        }
+    };
+
+    user.priv_key = priv_key;
 
     Ok(user)
 }
