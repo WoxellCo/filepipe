@@ -1,7 +1,7 @@
 users = {
     mk = {
         remote_username = "mk",
-        priv_key_path = ".fp/access/key"
+        priv_key_path = "test/test1"
     }
 }
 

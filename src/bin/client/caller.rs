@@ -1,9 +1,9 @@
-use std::sync::Arc;
+use std::{println, sync::Arc};
 
-use axum::Json;
+use axum::{Json, http::{HeaderMap, HeaderValue}};
 use ed25519_dalek::Signer;
 use filepipe::filepipe::StreamType;
-use reqwest::{Client, Response};
+use reqwest::{Client, Response, header::AUTHORIZATION};
 
 use crate::{
     caller::SenderError::FailedToAuthenticate,
@@ -16,6 +16,7 @@ pub struct ClientState {
     pub current_binding: Arc<Binding>,
 }
 
+#[derive(Debug, Clone)]
 pub enum SenderError {
     UserDoesNotExist { username: String },
     FailedToAuthenticate { message: Option<String> },
@@ -32,11 +33,8 @@ struct HuPutReq {
 impl ClientState {
     pub async fn authenticate(
         &self,
-        username: Option<String>,
-        stream_type: StreamType,
+        username: Option<String>
     ) -> Result<AccessKey, SenderError> {
-        //let mut headers = HeaderMap::new();
-        //headers.insert(AUTHORIZATION, HeaderValue::from_str(session_key).unwrap());
 
         let user = match username {
             Some(username) => match self.config.users.get(&username) {
@@ -54,34 +52,53 @@ impl ClientState {
             ))
             .send()
             .await
-            .map_err(|_| SenderError::FailedToAuthenticate { message: None })?
+            .map_err(|_| SenderError::FailedToAuthenticate { message: Some(String::from("a")) })?
             .text()
             .await
-            .map_err(|_| SenderError::FailedToAuthenticate { message: None })?;
+            .map_err(|_| SenderError::FailedToAuthenticate { message: Some(String::from("b")) })?;
 
         let response = serde_json::from_str::<serde_json::Value>(&response)
-            .map_err(|_| SenderError::FailedToAuthenticate { message: None })?;
+            .map_err(|_| SenderError::FailedToAuthenticate { message: Some(String::from("c")) })?;
 
         let access_key: String = match response.get("accessKey") {
-            Some(key) => key.to_string(),
+            Some(key) => match key.as_str() {
+                Some(key) => key.to_string(),
+                None => {
+                    return Err(SenderError::FailedToAuthenticate { message: Some(String::from("1")) });
+                }
+            },
             None => {
-                return Err(SenderError::FailedToAuthenticate { message: None });
+                return Err(SenderError::FailedToAuthenticate { message: Some(String::from("d")) });
             }
         };
 
         let access_key_bytes: AccessKey = access_key
             .as_bytes()
             .try_into()
-            .map_err(|_| SenderError::FailedToAuthenticate { message: None })?;
+            .map_err(|_| SenderError::FailedToAuthenticate { message: Some(String::from("e")) })?;
 
-        let signed = user.priv_key.sign(&access_key_bytes);
+        let signed = user.priv_key.sign(&access_key_bytes).to_vec();
 
-        let response: Response = self
+        let mut headers = HeaderMap::new();
+        headers.insert(AUTHORIZATION, HeaderValue::from_str(&access_key).unwrap());
+
+        let response = self
             .client
             .put(format!("{}/a", self.current_binding.remote_address))
-            .body(signed.to_bytes())
+            .headers(headers)
+            .body(signed)
             .send()
-            .await;
+            .await
+            .map_err(|_| SenderError::FailedToAuthenticate { message: Some(String::from("f")) })?;
+            
+        if !response.status().is_success() {
+            return Err(SenderError::FailedToAuthenticate { message: Some(String::from("2")) });
+        };
+
+        let access_key = response
+            .text()
+            .await
+            .map_err(|_| SenderError::FailedToAuthenticate { message: Some(String::from("g")) })?;
 
         /*let key = match stream_type {
             StreamType::UpStream => {

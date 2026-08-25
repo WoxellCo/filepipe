@@ -13,7 +13,7 @@ use tokio::fs::File;
 use {
     crate::config::{Config, User},
     filepipe::filepipe::{Repository, RepositoryAccess},
-    filepipe::key_gen,
+    filepipe::keys,
 };
 
 pub mod a;
@@ -80,7 +80,7 @@ impl AppState {
                 {
                     let sessions = self.sessions.read().await;
                     loop {
-                        key = key_gen::generate_random_string(64);
+                        key = keys::generate_random_string(64);
                         if !sessions.contains_key(&key) {
                             break;
                         }

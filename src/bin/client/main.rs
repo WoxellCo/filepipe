@@ -1,3 +1,7 @@
+use std::println;
+
+use filepipe::filepipe::StreamType;
+
 use crate::{caller::ClientState, config::init_config};
 
 mod caller;
@@ -13,7 +17,12 @@ async fn main() {
         current_binding: config.bindings.get("media").cloned().unwrap(),
     };
 
-    state.authenticate(None).await;
+    let _ = match state.authenticate(None).await {
+        Ok(_) => {},
+        Err(error) => {
+            println!("err: {:?}", error);
+        }
+    };
 
     println!("client!! 😭");
 }

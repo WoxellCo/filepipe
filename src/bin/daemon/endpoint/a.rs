@@ -12,7 +12,7 @@ use serde_json::json;
 
 use {
     crate::endpoint::{AccessKey, AppState},
-    filepipe::key_gen::{self, verify_signature},
+    filepipe::keys::{self, verify_signature},
 };
 
 pub async fn post(
@@ -37,7 +37,7 @@ pub async fn post(
     let mut access_keys = state.access_keys.write().await;
     let mut key;
     loop {
-        key = key_gen::generate_random_string(16);
+        key = keys::generate_random_string(16);
         if !access_keys.contains_key(&key) {
             break;
         }
@@ -89,8 +89,8 @@ pub async fn put(
         }
     };
 
-    let access_keys = state.access_keys.write().await;
-    let access_key = match access_keys.get(key) {
+    let mut access_keys = state.access_keys.write().await;
+    let access_key = match access_keys.get_mut(key) {
         Some(key) => key,
         None => {
             return (StatusCode::UNAUTHORIZED, headers_out, String::new());
@@ -106,8 +106,13 @@ pub async fn put(
 
     let user = access_key.user.clone();
 
+    println!("{:?}", verify_signature(&user.pub_key, key.as_bytes(), &signed_key));
+
     match verify_signature(&user.pub_key, key.as_bytes(), &signed_key) {
-        Ok(()) => (StatusCode::OK, headers_out, String::new()),
+        Ok(()) => {
+            access_key.signed = true;
+            (StatusCode::OK, headers_out, String::new())
+        }
         Err(_) => (StatusCode::FORBIDDEN, headers_out, String::new()),
     }
 }

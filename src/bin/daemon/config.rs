@@ -1,8 +1,9 @@
+use ed25519_dalek::{VerifyingKey, pkcs8::DecodePublicKey};
 use mlua::{Error::*, Lua, StdLib, Table};
 use std::{collections::HashMap, fs::read_to_string, sync::Arc, vec};
 use {
     filepipe::filepipe::{Repository, RepositoryAccess, RepositoryAccessAttribute},
-    filepipe::key_gen::parse_ssh_ed25519_pub_key,
+    filepipe::keys::parse_ssh_ed25519_pub_key,
 };
 
 #[derive(Clone, Debug)]
@@ -193,8 +194,8 @@ pub fn init_config(path: &String) -> Result<Config, Vec<ConfigError>> {
 
         let pub_key = read_to_string(&user_pub_key_path);
         let pub_key = match pub_key {
-            Ok(key) => match parse_ssh_ed25519_pub_key(key.as_str()) {
-                Ok(key) => key,
+            Ok(key) => match VerifyingKey::from_public_key_pem(key.as_str()) {
+                Ok(key) => key.to_bytes(),
                 Err(_) => {
                     errors.push(ConfigError::FailedToParsePublicKey);
                     return Ok(());

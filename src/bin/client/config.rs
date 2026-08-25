@@ -1,9 +1,6 @@
 use mlua::{Error::*, Lua, StdLib, Table, Value};
 use std::{
-    collections::HashMap,
-    fs::{self, read_to_string},
-    io::Read,
-    sync::Arc,
+    collections::HashMap, fs::{self, read_to_string}, io::Read, sync::Arc,
 };
 
 use ed25519_dalek::{SigningKey, pkcs8::DecodePrivateKey};
@@ -85,7 +82,7 @@ pub fn load_user(name: &String, v: &Table) -> Result<User, ConfigError> {
     let priv_key = SigningKey::from_pkcs8_pem(&priv_key);
     let priv_key = match priv_key {
         Ok(key) => key,
-        Err(_) => {
+        Err(e) => {
             return Err(ConfigError::FailedToSerializeSigningKey { name: name.clone() });
         }
     };
@@ -220,6 +217,10 @@ pub fn init_config(path: &String) -> Result<Config, Vec<ConfigError>> {
 
         Ok(())
     });
+
+    if !errors.is_empty() {
+        return Err(errors);
+    }
 
     let config = Config {
         users: users_map,
