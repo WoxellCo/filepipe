@@ -23,6 +23,12 @@ pub enum SenderError {
 
 pub type AccessKey = [u8; 16];
 
+/*#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct HuPutReq {
+    pub files;
+}*/
+
 impl ClientState {
     pub async fn authenticate(
         &self,
@@ -70,7 +76,14 @@ impl ClientState {
 
         let signed = user.priv_key.sign(&access_key_bytes);
 
-        let key = match stream_type {
+        let response: Response = self
+            .client
+            .put(format!("{}/a", self.current_binding.remote_address))
+            .body(signed.to_bytes())
+            .send()
+            .await;
+
+        /*let key = match stream_type {
             StreamType::UpStream => {
                 let response = self
                     .client
@@ -80,10 +93,10 @@ impl ClientState {
                         self.current_binding.remote_repository_name
                     ))
                     .header("authentication", access_key)
-                    .body(body);
+                    .json();
             }
             StreamType::DownStream => {}
-        };
+        };*/
 
         Ok(access_key_bytes)
     }

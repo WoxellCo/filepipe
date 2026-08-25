@@ -28,4 +28,4 @@ rand = { version = "0.10.2", features = ["thread_rng"] }
 ed25519-dalek = { version = "3.0.0", features = ["pkcs8", "pem"] }
 ssh-key = "0.6.7"
 clap = "4.6.6"
-reqwest = "0.13.4"
+reqwest = { version = "0.13.4", features = ["json"] }
