@@ -1,8 +1,10 @@
-use std::sync::Arc;
+use std::{format, str, sync::Arc, todo};
 
 use axum::http::{HeaderMap, HeaderValue};
 use ed25519_dalek::Signer;
+use filepipe::filepipe::StreamType;
 use reqwest::{Client, header::AUTHORIZATION};
+use serde_json::Value;
 
 use crate::config::{Binding, Config};
 
@@ -19,6 +21,7 @@ pub enum SenderError {
 }
 
 pub type AccessKey = [u8; 16];
+pub type SessionKey = [u8; 64];
 
 /*#[derive(serde::Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -113,5 +116,38 @@ impl ClientState {
             })?;
 
         Ok(access_key_bytes)
+    }
+
+    pub async fn send_open_stream_request(&self, stream_type: StreamType, access_key: AccessKey) -> Result<SessionKey, ()> {
+        let mut headers = HeaderMap::new();
+        headers.insert(AUTHORIZATION, HeaderValue::from_str(str::from_utf8(&access_key).unwrap()).unwrap());
+
+
+        match stream_type {
+            StreamType::UpStream => {
+                let response = self
+                    .client
+                    .post(format!("{}/hu/{}", self.current_binding.remote_address, self.current_binding.remote_repository_name))
+                    .headers(headers)
+                    .send()
+                    .await
+                    .map_err(|_| ())?;
+
+                if !response.status().is_success() {
+                    todo!("return proper error");
+                    return Err(());
+                }
+
+                let response: Value = response
+                    .json()
+                    .await
+                    .map_err(|_| ())?;
+
+                let key = response.get("key");
+            }
+            StreamType::DownStream => {}
+        }
+
+        Err(())
     }
 }

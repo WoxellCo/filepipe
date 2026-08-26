@@ -34,31 +34,6 @@ pub async fn post(
     headers_out.insert(CONTENT_TYPE, "application/json".parse().unwrap());
 
     let auth = headers.get("authorization");
-    /*let auth = match headers.get("authorization") {
-        Some(auth) => match auth.to_str() {
-            Ok(value) => value,
-            Err(_) => {
-                return (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    headers_out,
-                    json!({
-                        "error": "invalid auth conversion"
-                    })
-                    .to_string(),
-                );
-            }
-        },
-        None => {
-            return (
-                StatusCode::UNAUTHORIZED,
-                headers_out,
-                json!({
-                    "error": "missing access key"
-                })
-                .to_string(),
-            );
-        }
-    };*/
 
     let access = match state.authenticate(auth, &name).await {
         Some(access) => access,
