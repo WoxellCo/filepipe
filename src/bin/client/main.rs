@@ -1,4 +1,4 @@
-use std::println;
+use std::{println, process::exit};
 
 use filepipe::filepipe::StreamType;
 
@@ -6,6 +6,10 @@ use crate::{caller::ClientState, config::init_config};
 
 mod caller;
 mod config;
+
+struct Args {
+    
+}
 
 #[tokio::main]
 async fn main() {
@@ -17,12 +21,15 @@ async fn main() {
         current_binding: config.bindings.get("media").cloned().unwrap(),
     };
 
-    let _ = match state.authenticate(None).await {
-        Ok(_) => {},
+    let key = match state.authenticate(None).await {
+        Ok(key) => key,
         Err(error) => {
             println!("err: {:?}", error);
+            exit(1);
         }
     };
+
+
 
     println!("client!! 😭");
 }

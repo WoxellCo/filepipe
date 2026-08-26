@@ -34,8 +34,54 @@ pub async fn post(
     headers_out.insert(CONTENT_TYPE, "application/json".parse().unwrap());
 
     let auth = headers.get("authorization");
+    /*let auth = match headers.get("authorization") {
+        Some(auth) => match auth.to_str() {
+            Ok(value) => value,
+            Err(_) => {
+                return (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    headers_out,
+                    json!({
+                        "error": "invalid auth conversion"
+                    })
+                    .to_string(),
+                );
+            }
+        },
+        None => {
+            return (
+                StatusCode::UNAUTHORIZED,
+                headers_out,
+                json!({
+                    "error": "missing access key"
+                })
+                .to_string(),
+            );
+        }
+    };*/
 
-    //todo!("retreive the user from the access key and check permissions");
+    let access = match state.authenticate(auth, &name).await {
+        Some(access) => access,
+        None => {
+            return (
+                StatusCode::UNAUTHORIZED,
+                headers_out,
+                json!({
+                    "error": "invalid repository or invalid or missing access key"
+                })
+                .to_string(),
+            );
+        }
+    };
+
+    if !access.content.write {
+        return (
+            StatusCode::FORBIDDEN,
+            headers_out,
+            json!({"error": "user doesn't have enough permissions to perform this action"})
+                .to_string(),
+        );
+    }
 
     let new_session_key = match state.register_upstream_session(name.as_str()).await {
         Ok(key) => key,

@@ -132,7 +132,12 @@ impl AppState {
         session.cloned()
     }
 
-    pub fn authenticate(&self, key: Option<&HeaderValue>) -> Option<RepositoryAccess> {
+    pub async fn authenticate(
+        &self,
+        key: Option<&HeaderValue>,
+        repository_name: &str,
+    ) -> Option<RepositoryAccess> {
+        let mut access_sessions = self.access_keys.write().await;
         let key = match key {
             Some(key) => String::from(key.to_str().unwrap()),
             None => {
@@ -140,6 +145,29 @@ impl AppState {
             }
         };
 
-        None
+        let access_key = match access_sessions.get(&key) {
+            Some(access_key) => access_key.clone(),
+            None => return None,
+        };
+
+        access_sessions.remove(&key);
+
+        if !access_key.signed {
+            return None;
+        }
+
+        let user = access_key.user.clone();
+
+        let repository = match self.config.repositories.get(repository_name) {
+            Some(repository) => repository,
+            None => return None,
+        };
+
+        let access = match repository.access_list.get(&user.name) {
+            Some(access) => access,
+            None => return None,
+        };
+
+        Some(access.clone())
     }
 }

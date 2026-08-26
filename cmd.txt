@@ -1,0 +1,10 @@
+
+filepipe up # if only one binding is present execute it (maybe default in local config will be implemented)
+filepipe down # if only one binding is present execute it (maybe default in local config will be implemented)
+
+
+filepipe <action (up/down) or (u/d)> <binding id>
+
+
+filepipe <action> <binding id> -u <local username>
+filepipe <action> <binding id> --user <local username>

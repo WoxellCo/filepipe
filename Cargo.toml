@@ -3,6 +3,18 @@ name = "filepipe"
 version = "0.1.0"
 edition = "2024"
 
+[[bin]]
+name = "filepipe"
+path = "src/bin/client/main.rs"
+
+[[bin]]
+name = "filepiped"
+path = "src/bin/daemon/main.rs"
+
+[[bin]]
+name = "filepipe-keygen"
+path = "src/bin/keygen/main.rs"
+
 [dependencies]
 serde = { version = "1.0.228", features = ["derive"] }
 tokio = { version = "1.48.0", features = ["full"] }
@@ -27,6 +39,6 @@ cargo-watch = "8.5.3"
 rand = { version = "0.10.2", features = ["thread_rng"] }
 ed25519-dalek = { version = "3.0.0", features = ["pkcs8", "pem", "rand_core"] }
 ssh-key = "0.6.7"
-clap = "4.6.6"
+clap = { version = "4.6.6", features = ["derive"] }
 reqwest = { version = "0.13.4", features = ["json"] }
 getrandom = "0.4.3"

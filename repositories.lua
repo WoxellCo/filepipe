@@ -8,5 +8,5 @@ repositories["repository-name"] = {
 
 repositories["repository-name"].access_list["name"] = {
     info = { read = true, write = false },
-    content = { read = true, write = true }
+    content = { read = true, write = false }
 }
