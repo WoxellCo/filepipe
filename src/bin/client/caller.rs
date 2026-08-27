@@ -2,7 +2,7 @@ use std::{format, str, sync::Arc, todo};
 
 use axum::http::{HeaderMap, HeaderValue, response};
 use ed25519_dalek::Signer;
-use filepipe::filepipe::StreamType;
+use filepipe::{aio::get_file_list_in_dir_with_fpignore, filepipe::StreamType};
 use reqwest::{Client, header::AUTHORIZATION};
 use serde::de::value;
 use serde_json::Value;
@@ -163,6 +163,8 @@ impl ClientState {
         );
 
         let session_key;
+
+        let entries = get_file_list_in_dir_with_fpignore(&self.current_binding.local_path).await;
 
         match stream_type {
             StreamType::UpStream => {

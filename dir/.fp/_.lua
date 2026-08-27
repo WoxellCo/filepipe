@@ -13,7 +13,7 @@ bindings = {
         default_user = "mk" --string or object, can be both
     },
     deploy = {
-        local_path = "dir",
+        local_path = ".",
         remote_repository_name = "repository-name",
         remote_address = "http://127.0.0.1:32879",
         default_user = "mk" --string or object, can be both

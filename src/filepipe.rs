@@ -29,7 +29,7 @@ pub struct RepositoryMeta {
 pub struct RepositoryFile {
     pub path_dir: String,
     pub name: String,
-    pub size: usize,
+    pub size: u64,
     pub hash: String,
 }
 
@@ -37,11 +37,4 @@ pub struct RepositoryFile {
 pub enum StreamType {
     DownStream,
     UpStream,
-}
-
-pub fn extract_path_dir_and_name(path: &str) -> (String, String) {
-    match path.rsplit_once('/') {
-        Some((dir, name)) => (dir.to_owned(), name.to_owned()),
-        None => (String::new(), path.to_owned()),
-    }
 }
