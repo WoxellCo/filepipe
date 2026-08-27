@@ -2,12 +2,11 @@ use std::io::SeekFrom;
 use tokio::fs::File;
 use tokio::io::{AsyncReadExt, AsyncSeekExt};
 
-
 pub async fn read_chunk(
     //state: Option<&AppState>,
     path: &str,
     offset: u64,
-    size: usize
+    size: usize,
 ) -> std::io::Result<Vec<u8>> {
     /*if let state = Some(state) {
         todo!("implement!!!");
@@ -20,3 +19,5 @@ pub async fn read_chunk(
     file.read_exact(&mut buffer).await?;
     Ok(buffer)
 }
+
+pub async fn get_file_list_in_dir(path_dir: &str, ignore: Option<Vec<String>>) -> () {}

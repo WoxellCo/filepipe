@@ -1,9 +1,10 @@
 use std::{format, str, sync::Arc, todo};
 
-use axum::http::{HeaderMap, HeaderValue};
+use axum::http::{HeaderMap, HeaderValue, response};
 use ed25519_dalek::Signer;
 use filepipe::filepipe::StreamType;
 use reqwest::{Client, header::AUTHORIZATION};
+use serde::de::value;
 use serde_json::Value;
 
 use crate::config::{Binding, Config};
@@ -18,10 +19,11 @@ pub struct ClientState {
 pub enum SenderError {
     UserDoesNotExist { username: String },
     FailedToAuthenticate { message: Option<String> },
+    FailedToInitializeStream { message: String },
 }
 
 pub type AccessKey = [u8; 16];
-pub type SessionKey = [u8; 64];
+pub type SessionKey = String; //[u8; 64];
 
 /*#[derive(serde::Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -48,32 +50,63 @@ impl ClientState {
             .send()
             .await
             .map_err(|_| SenderError::FailedToAuthenticate {
-                message: Some(String::from("a")),
-            })?
-            .text()
-            .await
-            .map_err(|_| SenderError::FailedToAuthenticate {
-                message: Some(String::from("b")),
+                message: Some(String::from("the client couldn't fetch the post request")),
             })?;
 
-        let response = serde_json::from_str::<serde_json::Value>(&response).map_err(|_| {
-            SenderError::FailedToAuthenticate {
-                message: Some(String::from("c")),
+        if !response.status().is_success() {
+            let response: Value =
+                response
+                    .json()
+                    .await
+                    .map_err(|_| SenderError::FailedToAuthenticate {
+                        message: Some(String::from(
+                            "an unknown error has occurred during the post request",
+                        )),
+                    })?;
+
+            match response.get("error") {
+                Some(value) => {
+                    return Err(SenderError::FailedToAuthenticate {
+                        message: Some(value.as_str().unwrap_or("an error has occurred during the post request, additionally, the client couldn't extract the error message").to_string()),
+                    });
+                }
+                None => {
+                    return Err(SenderError::FailedToAuthenticate {
+                        message: Some(
+                            "an error has occurred during the post request, additionally, the client couldn't extract the error message"
+                            .to_string()
+                        )
+                    });
+                }
             }
-        })?;
+        }
+
+        let response: Value =
+            response
+                .json()
+                .await
+                .map_err(|_| SenderError::FailedToAuthenticate {
+                    message: Some(String::from("the server sent an invalid response")),
+                })?;
+
+        println!("{:?}", response);
 
         let access_key: String = match response.get("accessKey") {
             Some(key) => match key.as_str() {
                 Some(key) => key.to_string(),
                 None => {
                     return Err(SenderError::FailedToAuthenticate {
-                        message: Some(String::from("1")),
+                        message: Some(String::from(
+                            "failed to read the access key sent by the server",
+                        )),
                     });
                 }
             },
             None => {
                 return Err(SenderError::FailedToAuthenticate {
-                    message: Some(String::from("d")),
+                    message: Some(String::from(
+                        "the expected key from the server was not provided",
+                    )),
                 });
             }
         };
@@ -83,7 +116,7 @@ impl ClientState {
                 .as_bytes()
                 .try_into()
                 .map_err(|_| SenderError::FailedToAuthenticate {
-                    message: Some(String::from("e")),
+                    message: Some(String::from("an error occurred on the client side during the byte conversion for the access key")),
                 })?;
 
         let signed = user.priv_key.sign(&access_key_bytes).to_vec();
@@ -99,12 +132,12 @@ impl ClientState {
             .send()
             .await
             .map_err(|_| SenderError::FailedToAuthenticate {
-                message: Some(String::from("f")),
+                message: Some(String::from("the client couldn't fetch the put request")),
             })?;
 
         if !response.status().is_success() {
             return Err(SenderError::FailedToAuthenticate {
-                message: Some(String::from("2")),
+                message: Some(String::from("corrupted access key")),
             });
         };
 
@@ -112,42 +145,74 @@ impl ClientState {
             .text()
             .await
             .map_err(|_| SenderError::FailedToAuthenticate {
-                message: Some(String::from("g")),
+                message: Some(String::from("corrupted access key")),
             })?;
 
         Ok(access_key_bytes)
     }
 
-    pub async fn send_open_stream_request(&self, stream_type: StreamType, access_key: AccessKey) -> Result<SessionKey, ()> {
+    pub async fn send_open_stream_request(
+        &self,
+        stream_type: StreamType,
+        access_key: AccessKey,
+    ) -> Result<SessionKey, SenderError> {
         let mut headers = HeaderMap::new();
-        headers.insert(AUTHORIZATION, HeaderValue::from_str(str::from_utf8(&access_key).unwrap()).unwrap());
+        headers.insert(
+            AUTHORIZATION,
+            HeaderValue::from_str(str::from_utf8(&access_key).unwrap()).unwrap(),
+        );
 
+        let session_key;
 
         match stream_type {
             StreamType::UpStream => {
                 let response = self
                     .client
-                    .post(format!("{}/hu/{}", self.current_binding.remote_address, self.current_binding.remote_repository_name))
+                    .post(format!(
+                        "{}/hu/{}",
+                        self.current_binding.remote_address,
+                        self.current_binding.remote_repository_name
+                    ))
                     .headers(headers)
                     .send()
                     .await
-                    .map_err(|_| ())?;
+                    .map_err(|_| SenderError::FailedToInitializeStream {
+                        message: "idk1".to_string(),
+                    })?;
 
                 if !response.status().is_success() {
-                    todo!("return proper error");
-                    return Err(());
+                    return Err(SenderError::FailedToInitializeStream {
+                        message: response.text().await.unwrap_or("unknown".to_string()),
+                    });
                 }
 
-                let response: Value = response
-                    .json()
-                    .await
-                    .map_err(|_| ())?;
+                let response: Value =
+                    response
+                        .json()
+                        .await
+                        .map_err(|_| SenderError::FailedToInitializeStream {
+                            message: "idk2".to_string(),
+                        })?;
 
-                let key = response.get("key");
+                let key = match response.get("key") {
+                    Some(key) => match key.as_str() {
+                        Some(key) => key,
+                        None => {
+                            todo!("return proper error");
+                        }
+                    },
+                    None => {
+                        todo!("return proper error");
+                    }
+                };
+
+                session_key = key.to_string();
             }
-            StreamType::DownStream => {}
+            StreamType::DownStream => {
+                session_key = String::new();
+            }
         }
 
-        Err(())
+        Ok(session_key)
     }
 }

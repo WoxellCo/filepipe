@@ -6,7 +6,7 @@ repositories["repository-name"] = {
     access_list = {}
 }
 
-repositories["repository-name"].access_list["name"] = {
+repositories["repository-name"].access_list["mkx"] = {
     info = { read = true, write = false },
-    content = { read = true, write = false }
+    content = { read = true, write = true }
 }

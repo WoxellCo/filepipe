@@ -144,17 +144,20 @@ impl AppState {
                 return None;
             }
         };
+        println!("1");
 
         let access_key = match access_sessions.get(&key) {
             Some(access_key) => access_key.clone(),
             None => return None,
         };
+        println!("2");
 
         access_sessions.remove(&key);
 
         if !access_key.signed {
             return None;
         }
+        println!("3");
 
         let user = access_key.user.clone();
 
@@ -162,11 +165,13 @@ impl AppState {
             Some(repository) => repository,
             None => return None,
         };
+        println!("4");
 
         let access = match repository.access_list.get(&user.name) {
             Some(access) => access,
             None => return None,
         };
+        println!("5");
 
         Some(access.clone())
     }

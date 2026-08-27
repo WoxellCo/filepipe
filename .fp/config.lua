@@ -1,6 +1,6 @@
 users = {
     mk = {
-        remote_username = "mk",
+        remote_username = "mkx",
         priv_key_path = "test/test1"
     }
 }
@@ -14,7 +14,7 @@ bindings = {
     },
     deploy = {
         local_path = "out",
-        remote_repository_name = "woxell.co",
+        remote_repository_name = "repository-name",
         remote_address = "http://127.0.0.1:32879",
         default_user = "mk" --string or object, can be both
     }
