@@ -10,6 +10,8 @@ use chrono::Utc;
 use serde::Deserialize;
 use serde_json::json;
 
+use crate::endpoint::Expirable;
+
 use {
     crate::endpoint::{AccessKey, AppState},
     filepipe::keys::{self, verify_signature},
@@ -97,6 +99,10 @@ pub async fn put(
         }
     };
 
+    if access_key.is_expired() {
+        return (StatusCode::GONE, headers_out, String::new());
+    }
+
     let signed_key: [u8; 64] = match body.as_ref().try_into() {
         Ok(b) => b,
         Err(_) => {
@@ -105,8 +111,6 @@ pub async fn put(
     };
 
     let user = access_key.user.clone();
-
-    println!("{:?}", verify_signature(&user.pub_key, key.as_bytes(), &signed_key));
 
     match verify_signature(&user.pub_key, key.as_bytes(), &signed_key) {
         Ok(()) => {

@@ -38,6 +38,8 @@ async fn main() {
         ])
         .allow_headers(Any);
 
+    state.run_gc_keys_loop(std::time::Duration::from_secs(30));
+
     let router: Router = Router::new()
         .merge(endpoint::routes())
         .with_state(state)

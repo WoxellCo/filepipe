@@ -8,8 +8,13 @@ use axum::{
 use serde::Deserialize;
 use serde_json::json;
 
+use crate::endpoint::Expirable;
+
 use super::AppState;
-use filepipe::{aio::extract_path_dir_and_name, filepipe::RepositoryFile};
+use filepipe::{
+    aio::extract_path_dir_and_name,
+    filepipe::{RepositoryFile, StreamType, unpack_repository_files_info},
+};
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -79,100 +84,106 @@ pub async fn post(
 
 // once the server accepts the upload stream request, the client should send the files information and their size with the hash to initialize the writing process
 pub async fn put(
-    State(mut state): State<AppState>,
+    State(state): State<AppState>,
     headers: HeaderMap,
     Json(payload): Json<PutReq>,
 ) -> (StatusCode, HeaderMap, String) {
+    let session = state
+        .get_session_by_key_in_header_value(headers.get("authorization"))
+        .await;
+
     let mut headers_out = HeaderMap::new();
     headers_out.insert(CONTENT_TYPE, "application/json".parse().unwrap());
 
-    let raw_files_data = payload.files.split(";");
-    let mut files: Vec<RepositoryFile> = Vec::new();
-
-    for (index, raw_file_data) in raw_files_data.enumerate() {
-        // mk: (full path, size in bytes (string), hash)
-        let mut data_tuple: (Option<&str>, Option<&str>, Option<&str>) = (None, None, None);
-        let file_data = raw_file_data.split(":");
-
-        for (data_type, file_data_cell) in file_data.enumerate() {
-            match data_type {
-                0 => {
-                    data_tuple.0 = Some(file_data_cell);
-                }
-                1 => {
-                    data_tuple.1 = Some(file_data_cell);
-                }
-                2 => {
-                    data_tuple.2 = Some(file_data_cell);
-                }
-                _ => {}
-            }
+    let key = match session.0 {
+        Some(key) => key,
+        None => {
+            return (
+                StatusCode::UNAUTHORIZED,
+                headers_out,
+                json!({"error": "invalid or missing session key"}).to_string(),
+            );
         }
+    };
 
-        let mut file: RepositoryFile = RepositoryFile::default();
-
-        match data_tuple.0 {
-            Some(data) => {
-                let path = extract_path_dir_and_name(data);
-                file.path_dir = path.0;
-                file.name = path.1;
-            }
-            None => {
-                /*return (
-                    StatusCode::BAD_REQUEST,
-                    headers_out,
-                    json!({"error": format!("expected first element for path, index: {index}")})
-                        .to_string(),
-                );*/
-                break;
-            }
+    let mut session = match session.1 {
+        Some(session) => session,
+        None => {
+            return (
+                StatusCode::UNAUTHORIZED,
+                headers_out,
+                json!({"error": "invalid or missing session key"}).to_string(),
+            );
         }
+    };
 
-        match data_tuple.1 {
-            Some(data) => {
-                let file_size = data.trim().parse();
-                match file_size {
-                    Ok(file_size) => {
-                        file.size = file_size;
-                    }
-                    Err(_) => {
-                        return (
-                            StatusCode::BAD_REQUEST,
-                            headers_out,
-                            json!({"error": format!("invalid second element for size in bytes, and unsigned number is expected, index: {index}")})
-                                .to_string(),
-                        );
-                    }
-                }
-            }
-            None => {
-                return (
-                    StatusCode::BAD_REQUEST,
-                    headers_out,
-                    json!({"error": format!("expected second element for size in bytes, index: {index}")})
-                        .to_string(),
-                );
-            }
-        }
-
-        match data_tuple.2 {
-            Some(data) => {
-                file.hash = data.to_string();
-            }
-            None => {
-                return (
-                    StatusCode::BAD_REQUEST,
-                    headers_out,
-                    json!({"error": format!("expected third element for hash, index: {index}")})
-                        .to_string(),
-                );
-            }
-        }
-
-        files.push(file);
+    if session.is_expired() {
+        return (
+            StatusCode::GONE,
+            headers_out,
+            json!({"error": "session expired"}).to_string(),
+        );
     }
 
-    todo!("actually initialize the stream and update the app state");
+    if session.stream_type != StreamType::UpStream {
+        return (
+            StatusCode::FORBIDDEN,
+            headers_out,
+            json!({"error": format!("invalid stream type")}).to_string(),
+        );
+    }
+
+    let files = match unpack_repository_files_info(&payload.files) {
+        Ok(files) => files,
+        Err(error) => match error.tuple_position {
+            1 => match error.error_kind {
+                filepipe::filepipe::ErrorKind::InvalidRange => return (
+                    StatusCode::BAD_REQUEST,
+                    headers_out,
+                    json!({"error": format!("invalid second element for size in bytes, and unsigned number is expected, index: {}", error.index)})
+                        .to_string(),
+                    ),
+                filepipe::filepipe::ErrorKind::InvalidType => return (
+                    StatusCode::BAD_REQUEST,
+                    headers_out,
+                    json!({"error": format!("expected second element for size in bytes, index: {}", error.index)})
+                        .to_string(),
+                    ),
+            },
+            2 => match error.error_kind {
+                filepipe::filepipe::ErrorKind::InvalidType => return (
+                    StatusCode::BAD_REQUEST,
+                    headers_out,
+                    json!({"error": format!("expected third element for hash, index: {}", error.index)})
+                        .to_string(),
+                    ),
+                filepipe::filepipe::ErrorKind::InvalidRange => return (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    headers_out,
+                    json!({"error": format!("unknown, index: {}", error.index)})
+                        .to_string(),
+                    ),
+            },
+            _ => {
+                return (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    headers_out,
+                    json!({"error": format!("unknown, index: {}", error.index)})
+                        .to_string(),
+                    );
+            }
+        }
+    };
+
+    println!("{:?}", files);
+    //todo!("actually initialize the stream and update the app state");
+
+    state
+        .with_session_mut(&key, |session| {
+            session.update_last_activity();
+            session.file_list = files;
+        })
+        .await;
 
     (StatusCode::OK, headers_out, String::new())
 }

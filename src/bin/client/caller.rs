@@ -2,10 +2,13 @@ use std::{format, str, sync::Arc, todo};
 
 use axum::http::{HeaderMap, HeaderValue, response};
 use ed25519_dalek::Signer;
-use filepipe::{aio::get_file_list_in_dir_with_fpignore, filepipe::StreamType};
+use filepipe::{
+    aio::{IOError, get_file_list_in_dir_with_fpignore},
+    filepipe::{StreamType, pack_repository_files_info},
+};
 use reqwest::{Client, header::AUTHORIZATION};
 use serde::de::value;
-use serde_json::Value;
+use serde_json::{Value, json};
 
 use crate::config::{Binding, Config};
 
@@ -20,6 +23,7 @@ pub enum SenderError {
     UserDoesNotExist { username: String },
     FailedToAuthenticate { message: Option<String> },
     FailedToInitializeStream { message: String },
+    IOError { error: IOError },
 }
 
 pub type AccessKey = [u8; 16];
@@ -164,7 +168,17 @@ impl ClientState {
 
         let session_key;
 
-        let entries = get_file_list_in_dir_with_fpignore(&self.current_binding.local_path).await;
+        println!(
+            "&self.current_binding.local_path: {}",
+            self.current_binding.local_path
+        );
+        let entries = get_file_list_in_dir_with_fpignore(&self.current_binding.local_path)
+            .await
+            .map_err(|error| SenderError::IOError { error })?;
+
+        let entries = pack_repository_files_info(entries);
+
+        println!("{:?}", entries);
 
         match stream_type {
             StreamType::UpStream => {
@@ -209,6 +223,32 @@ impl ClientState {
                 };
 
                 session_key = key.to_string();
+
+                let mut headers = HeaderMap::new();
+                headers.insert(AUTHORIZATION, HeaderValue::from_str(&session_key).unwrap());
+
+                let response = self
+                    .client
+                    .put(format!(
+                        "{}/hu/{}",
+                        self.current_binding.remote_address,
+                        self.current_binding.remote_repository_name
+                    ))
+                    .headers(headers)
+                    .json(&json!({
+                        "files": entries
+                    }))
+                    .send()
+                    .await
+                    .map_err(|_| SenderError::FailedToInitializeStream {
+                        message: "idk1".to_string(),
+                    })?;
+
+                if !response.status().is_success() {
+                    return Err(SenderError::FailedToInitializeStream {
+                        message: response.text().await.unwrap(),
+                    });
+                }
             }
             StreamType::DownStream => {
                 session_key = String::new();

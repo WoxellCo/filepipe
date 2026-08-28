@@ -873,6 +873,7 @@ dependencies = [
  "dotenvy",
  "ed25519-dalek",
  "getrandom 0.4.3",
+ "hex",
  "ignore",
  "mlua",
  "rand 0.10.2",
@@ -882,9 +883,10 @@ dependencies = [
  "serde_with",
  "ssh-key",
  "tokio",
+ "tokio_schedule",
  "tower",
  "tower-http 0.7.0",
- "xxh3",
+ "xxhash-rust",
 ]
 
 [[package]]
@@ -2944,6 +2946,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "tokio_schedule"
+version = "0.3.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "61c291c554da3518d6ef69c76ea35aabc78f736185a16b6017f6d1c224dac2e0"
+dependencies = [
+ "chrono",
+ "tokio",
+]
+
+[[package]]
 name = "tower"
 version = "0.5.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3380,10 +3392,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3ad82d2a33cdc9674dc7465672f271e096168fcdbe0f799d9e6db8c5892679dc"
 
 [[package]]
-name = "xxh3"
-version = "0.1.1"
+name = "xxhash-rust"
+version = "0.8.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8a291e51a49d327a9e7edbf9db6e320fdd1aa7ae06afcddc252f3e041e5aed01"
+checksum = "aee1b19627c7c60102ab80d3a9cbe18de90bfe03bfa6c3715447681f0e8c8af6"
 
 [[package]]
 name = "yoke"

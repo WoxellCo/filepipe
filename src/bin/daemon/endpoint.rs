@@ -1,7 +1,7 @@
-use std::{collections::HashMap, sync::Arc};
+use std::{collections::HashMap, sync::Arc, time};
 
 use chrono::{DateTime, Utc};
-use filepipe::filepipe::StreamType;
+use filepipe::filepipe::{RepositoryFile, StreamType};
 use tokio::sync::RwLock;
 
 use axum::{
@@ -26,6 +26,9 @@ pub mod ss;
 pub struct Session {
     pub stream_type: StreamType,
     pub repository: Arc<Repository>,
+    pub expire: DateTime<Utc>,
+    pub last_activity: DateTime<Utc>,
+    pub file_list: Vec<RepositoryFile>,
 }
 
 // authentication process, before the session key the server gives to the client an access key challenge the client has to sign
@@ -93,6 +96,9 @@ impl AppState {
                     Session {
                         stream_type: StreamType::UpStream,
                         repository,
+                        expire: Utc::now() + chrono::Duration::days(1),
+                        last_activity: Utc::now(),
+                        file_list: Vec::new(),
                     },
                 );
 
@@ -118,18 +124,21 @@ impl AppState {
     pub async fn get_session_by_key_in_header_value(
         &self,
         key: Option<&HeaderValue>,
-    ) -> Option<Session> {
+    ) -> (Option<String>, Option<Session>) {
         let key = match key {
-            Some(key) => String::from(key.to_str().ok()?.to_string()),
+            Some(key) => match key.to_str() {
+                Ok(key) => key.to_string(),
+                Err(_) => return (None, None),
+            },
             None => {
-                return None;
+                return (None, None);
             }
         };
 
         let sessions = self.sessions.read().await;
         let session: Option<&Session> = sessions.get(&key);
         //println!("{key}");
-        session.cloned()
+        (Some(key.clone()), session.cloned())
     }
 
     pub async fn authenticate(
@@ -144,20 +153,21 @@ impl AppState {
                 return None;
             }
         };
-        println!("1");
 
         let access_key = match access_sessions.get(&key) {
             Some(access_key) => access_key.clone(),
             None => return None,
         };
-        println!("2");
 
         access_sessions.remove(&key);
+
+        if access_key.is_expired() {
+            return None;
+        }
 
         if !access_key.signed {
             return None;
         }
-        println!("3");
 
         let user = access_key.user.clone();
 
@@ -165,14 +175,93 @@ impl AppState {
             Some(repository) => repository,
             None => return None,
         };
-        println!("4");
 
         let access = match repository.access_list.get(&user.name) {
             Some(access) => access,
             None => return None,
         };
-        println!("5");
 
         Some(access.clone())
+    }
+
+    pub fn run_gc_keys_loop(&self, every: time::Duration) {
+        let state = self.clone();
+        tokio::spawn(async move {
+            let mut interval = tokio::time::interval(every);
+            loop {
+                interval.tick().await;
+                state.gc_keys().await;
+            }
+        });
+    }
+
+    pub async fn gc_keys(&self) {
+        let expired_access_keys: Vec<String>;
+        {
+            let access_keys = self.access_keys.read().await;
+
+            expired_access_keys = access_keys
+                .iter()
+                .filter(|(_, access_key)| access_key.is_expired())
+                .map(|(k, _)| k.clone())
+                .collect();
+        }
+
+        let expired_sessions: Vec<String>;
+        {
+            let sessions = self.sessions.read().await;
+
+            expired_sessions = sessions
+                .iter()
+                .filter(|(_, session)| session.is_expired())
+                .map(|(k, _)| k.clone())
+                .collect();
+        }
+
+        {
+            let mut access_keys = self.access_keys.write().await;
+            for expired in expired_access_keys.iter() {
+                access_keys.remove(expired);
+            }
+        }
+
+        {
+            let mut sessions = self.sessions.write().await;
+            for expired in expired_sessions.iter() {
+                sessions.remove(expired);
+            }
+        }
+    }
+
+    pub async fn with_session_mut<F, R>(&self, key: &str, f: F) -> Option<R>
+    where
+        F: FnOnce(&mut Session) -> R,
+    {
+        let mut sessions = self.sessions.write().await;
+        sessions.get_mut(key).map(f)
+    }
+}
+
+pub trait Expirable {
+    fn is_expired(&self) -> bool;
+}
+
+impl Session {
+    pub fn update_last_activity(&mut self) {
+        self.last_activity = Utc::now();
+    }
+}
+
+impl Expirable for Session {
+    fn is_expired(&self) -> bool {
+        let now = Utc::now();
+        now > self.expire || now > self.last_activity + chrono::Duration::minutes(30)
+    }
+}
+
+impl Expirable for AccessKey {
+    fn is_expired(&self) -> bool {
+        let now = Utc::now();
+        now > self.expire + chrono::Duration::minutes(5)
     }
 }

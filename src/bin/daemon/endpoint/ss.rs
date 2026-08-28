@@ -17,7 +17,7 @@ use serde_json::json;
 //use axum_range::{Ranged, KnownSize};
 use axum_extra::{TypedHeader, headers::Range};
 
-use crate::endpoint::{AppState, Session, StreamType};
+use crate::endpoint::{AppState, Expirable, Session, StreamType};
 use filepipe::aio::read_chunk;
 
 /*
@@ -76,7 +76,19 @@ pub async fn get(
     );*/
     ///////////////
 
-    let session = match state.get_session_by_key_in_header_value(auth).await {
+    let session = state.get_session_by_key_in_header_value(auth).await;
+    let key = match session.0 {
+        Some(session) => session,
+        None => {
+            headers_out.insert(CONTENT_TYPE, "application/json".parse().unwrap());
+            return (
+                StatusCode::UNAUTHORIZED,
+                headers_out,
+                Body::from(json!({ "error": "invalid or missing session key" }).to_string()),
+            );
+        }
+    };
+    let session = match session.1 {
         Some(session) => session,
         None => {
             headers_out.insert(CONTENT_TYPE, "application/json".parse().unwrap());
@@ -184,7 +196,8 @@ pub async fn post(
     );*/
     ///////////////
 
-    let session = match state.get_session_by_key_in_header_value(auth).await {
+    let session = state.get_session_by_key_in_header_value(auth).await;
+    let key = match session.0 {
         Some(session) => session,
         None => {
             headers_out.insert(CONTENT_TYPE, "application/json".parse().unwrap());
@@ -195,6 +208,25 @@ pub async fn post(
             );
         }
     };
+    let mut session = match session.1 {
+        Some(session) => session,
+        None => {
+            headers_out.insert(CONTENT_TYPE, "application/json".parse().unwrap());
+            return (
+                StatusCode::UNAUTHORIZED,
+                headers_out,
+                Body::from(json!({ "error": "invalid or missing session key" }).to_string()),
+            );
+        }
+    };
+
+    if session.is_expired() {
+        return (
+            StatusCode::GONE,
+            headers_out,
+            Body::from(json!({ "error": "session expired" }).to_string()),
+        );
+    }
 
     if session.stream_type != StreamType::UpStream {
         headers_out.insert(CONTENT_TYPE, "application/json".parse().unwrap());
@@ -242,6 +274,11 @@ pub async fn post(
     };
 
     //let (path_dir, name) = extract_path_dir_and_name(&path);
+    state
+        .with_session_mut(&key, |session| {
+            session.update_last_activity();
+        })
+        .await;
 
     (
         StatusCode::INTERNAL_SERVER_ERROR,
