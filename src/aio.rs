@@ -11,6 +11,7 @@ use crate::filepipe::RepositoryFile;
 pub enum IOError {
     FailedToOpenFile { path: String },
     FailedToConvertHashBytesToString { path: String },
+    FailedToConvertHashStringToBytes { hash: String },
 }
 
 pub async fn read_chunk(
@@ -110,4 +111,19 @@ pub async fn get_file_list_in_dir_with_fpignore(
     }
 
     Ok(entries)
+}
+
+pub fn hash_str_to_u128(hash_str: &str) -> Result<u128, ()> {
+    let hash = hex::decode(hash_str).map_err(|_| ())?;
+
+    let hash: [u8; 16] = match hash.as_array() {
+        Some(hash) => hash.clone(),
+        None => {
+            return Err(());
+        }
+    };
+
+    let hash: u128 = u128::from_le_bytes(hash);
+
+    Ok(hash)
 }
