@@ -141,6 +141,16 @@ impl AppState {
         (Some(key.clone()), session.cloned())
     }
 
+    pub async fn get_session_by_key(
+        &self,
+        key: &str,
+    ) -> Option<Session> {
+        let sessions = self.sessions.read().await;
+        let session: Option<&Session> = sessions.get(key);
+        //println!("{key}");
+        session.cloned()
+    }
+
     pub async fn authenticate(
         &self,
         key: Option<&HeaderValue>,

@@ -1,5 +1,7 @@
 // head for upload
 
+use std::{format, println};
+
 use axum::{
     Json,
     extract::{Path, State},
@@ -7,13 +9,13 @@ use axum::{
 };
 use serde::Deserialize;
 use serde_json::json;
+use tokio::fs::File;
 
 use crate::endpoint::Expirable;
 
 use super::AppState;
 use filepipe::{
-    aio::extract_path_dir_and_name,
-    filepipe::{RepositoryFile, StreamType, unpack_repository_files_info},
+    aio::{extract_path_dir_and_name, get_file_list_in_dir_with_fpignore}, filepipe::{RepositoryFile, StreamType, unpack_repository_files_info},
 };
 
 #[derive(Deserialize)]
@@ -106,7 +108,7 @@ pub async fn put(
         }
     };
 
-    let mut session = match session.1 {
+    let session = match session.1 {
         Some(session) => session,
         None => {
             return (
@@ -175,15 +177,75 @@ pub async fn put(
         }
     };
 
-    println!("{:?}", files);
+    //println!("{:?}", files);
     //todo!("actually initialize the stream and update the app state");
 
     state
         .with_session_mut(&key, |session| {
+            println!("111: {:?}", session.file_list);
             session.update_last_activity();
             session.file_list = files;
+            println!("222: {:?}", session.file_list);
         })
         .await;
+
+    let session = match state.get_session_by_key(&key).await {
+        Some(session) => session,
+        None => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                headers_out,
+                json!({"error": format!("session died")})
+                    .to_string(),
+            );
+        }
+    };
+    
+    println!("{:?}", session.file_list);
+
+    // mk: todo: read hashes and compare (also check if same hash is contained in a diff file (copy or rename)), then send only the different files to the client
+
+    let server_repository_file_list = match get_file_list_in_dir_with_fpignore(&session.repository.path).await {
+        Ok(file_list) => file_list,
+        Err(_) => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                headers_out,
+                json!({"error": format!("failed to fetch server files")})
+                    .to_string(),
+            );
+        }
+    };
+
+    for entry in session.file_list {
+        if entry.size == 0 {
+            //tokio::fs::
+            continue;
+        }
+
+        let _ = tokio::fs::create_dir_all(format!("{}/.fp/utmp/{}", session.repository.path, entry.path_dir)).await;
+
+        let file = match File::create(format!("{}/.fp/utmp/{}/{}", session.repository.path, entry.path_dir, entry.name)).await {
+            Ok(file) => file,
+            Err(_) => {
+                return (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    headers_out,
+                    json!({"error": format!("failed to create utmp file: {}/{}/{}", session.repository.name, entry.path_dir, entry.name)})
+                        .to_string(),
+                );
+            }
+        };
+
+        if let Err(error) = file.set_len(entry.size).await {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                headers_out,
+                json!({"error": format!("failed to allocate bytes to the disk for utmp file: {}/{}/{}: {}", session.repository.name, entry.path_dir, entry.name, error.to_string())})
+                    .to_string(),
+            );
+        };
+    }
 
     (StatusCode::OK, headers_out, String::new())
 }

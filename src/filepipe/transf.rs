@@ -63,7 +63,7 @@ pub fn compute(
 
     let mut to_keep: HashSet<String> = HashSet::new(); // <current_file_path>
     let mut to_copy: HashMap<String, String> = HashMap::new(); // <src_current_path, dest_current_path or temp_path> // <content_hash, (src_current_path, dest_current_path)>
-    let mut to_rename: HashMap<String, String> = HashMap::new(); // <src_current_path, dest_current_path or temp_path> // <content_hash, (src_current_path, dest_current_path)>
+    let mut to_move: HashMap<String, String> = HashMap::new(); // <src_current_path, dest_current_path or temp_path> // <content_hash, (src_current_path, dest_current_path)>
     let mut to_transfer: HashMap<u128, HashSet<String>> = HashMap::new(); // <other_hash, goal_files_that_have_the_hash or temp_path>
     //let mut to_transfer: HashMap<String, HashSet<String>> = HashMap::new(); // <dest_goal_and_current_path, other_files_that_have_the_same_content or temp_path> // <content_hash, dest_goal_and_current_path>
 
@@ -73,14 +73,10 @@ pub fn compute(
     for g_element in goal_hashes.iter() {
         let Some(c_element) = current_hashes.get(g_element.0) else {
             // mk: actually network transfer + copy?
-            for g in g_element.1.iter() {
-                to_transfer
-                    .entry(g.clone())
-                    .and_modify(|copies| {
-                        copies.insert();
-                    })
-                    .or_insert_with(|| HashMap::from(HashSet::new()));
-            }
+            to_transfer
+                .entry(g_element.0.clone())
+                .or_default()
+                .extend(g_element.1.iter().cloned());
             continue;
         };
 
@@ -91,8 +87,13 @@ pub fn compute(
 
         if g_element.1.len() < c_element.len() {
             // to_delete
+            let delete_or_move = c_element.difference(&g_element.1);
         } else if g_element.1.len() > c_element.len() {
             // to_copy
+            let copy_or_move = c_element.difference(&g_element.1);
+            let g_exclusives = g_element.1.difference(&c_element);
+
+            
         }
     }
 

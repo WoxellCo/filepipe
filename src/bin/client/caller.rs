@@ -1,4 +1,4 @@
-use std::{format, str, sync::Arc, todo};
+use std::{format, println, str, sync::Arc, todo};
 
 use axum::http::{HeaderMap, HeaderValue, response};
 use ed25519_dalek::Signer;
@@ -169,7 +169,7 @@ impl ClientState {
         let session_key;
 
         println!(
-            "&self.current_binding.local_path: {}",
+            "self.current_binding.local_path: {}",
             self.current_binding.local_path
         );
         let entries = get_file_list_in_dir_with_fpignore(&self.current_binding.local_path)
@@ -179,6 +179,7 @@ impl ClientState {
         let entries = pack_repository_files_info(entries);
 
         println!("{:?}", entries);
+        println!("abc {:?}", stream_type);
 
         match stream_type {
             StreamType::UpStream => {

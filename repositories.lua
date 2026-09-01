@@ -2,7 +2,7 @@ repositories = {}
 
 repositories["repository-name"] = {
     --path = "/var/www/woxell.co",
-    path = "./dir",
+    path = "./dir-u",
     access_list = {}
 }
 
