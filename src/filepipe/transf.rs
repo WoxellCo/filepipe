@@ -3,6 +3,7 @@ use std::{
     rc::Rc,
 };
 
+use chrono::format::Numeric::Quarter;
 use serde::de::value;
 
 use crate::{
@@ -33,7 +34,7 @@ pub struct FileTranformations {
     //pub to_copy: HashMap<String, (Option<String>, HashSet<String>)>,
     pub to_copy: HashMap<String, (Option<String>, Vec<String>)>,
     pub to_move: HashMap<String, String>,
-    pub to_transfer: HashMap<u128, HashSet<String>>,
+    pub to_transfer: HashMap<u128, Vec<String>>,
     pub temp_paths: HashMap<String, String>,
 }
 
@@ -45,6 +46,8 @@ pub enum FileProcessError {
 // current: local machine
 // goal: remote machine, which the current tries to replicate
 
+// mk: okay, i somehow managed to do it, it was a bit tricky, i know there are better ways to achieve this, but apparently it works
+// mk: just a note for myself or others: i would consider improving this in the future
 pub fn compute<F>(
     current_state: &HashMap<String, RepositoryFile>,
     goal_state: &HashMap<String, RepositoryFile>,
@@ -87,7 +90,7 @@ where
     let mut to_keep: HashSet<String> = HashSet::new();
     let mut to_copy: HashMap<String, (Option<String>, Vec<String>)> = HashMap::new();
     let mut to_move: HashMap<String, String> = HashMap::new();
-    let mut to_transfer: HashMap<u128, HashSet<String>> = HashMap::new();
+    let mut to_transfer: HashMap<u128, Vec<String>> = HashMap::new();
     //let mut to_transfer: HashMap<String, HashSet<String>> = HashMap::new(); // <dest_goal_and_current_path, other_files_that_have_the_same_content or temp_path> // <content_hash, dest_goal_and_current_path>
 
     let mut temp_paths: HashMap<String, String> = HashMap::new(); // <temp_path, supposed_to_be_path>
@@ -216,40 +219,78 @@ where
     // mk: i will use smart pointers (Rc<str>) in the future, now i just want something functional
     let mut seen: HashSet<String> = HashSet::from_iter(to_move.keys().cloned());
     seen.extend(to_copy.keys().cloned());
-    seen.extend(to_transfer.values().flat_map(|x| x.iter().cloned()));
+    seen.extend(to_delete.iter().cloned());
+    //seen.extend(to_transfer.keys().cloned());
 
-    // mk: ok i made a mess here, the keys and values for `temp_paths` are swapped, hopefully i will get better at rust
-    // mk: committing the following, so i can at least revert if i mess up even more
+    let seen: HashMap<String, Option<String>> = seen.into_iter().map(|x| (x, None)).collect();
+
     for value in to_move.values_mut() {
-        if !seen.insert(value.clone()) {
-            /* *value = temp_paths
-            .entry(value.clone())
-            .or_insert_with_key(|v| generate_temp_path(v, &existing_file_predicate))
-            .clone();*/
-            *value = temp_paths
-                .entry(value.clone())
-                .or_insert_with_key(|v| generate_temp_path(v, &existing_file_predicate))
-                .clone();
-        }
+        let Some(seen_value) = seen.get(value) else {
+            continue;
+        };
+
+        let temp_path = match seen_value {
+            Some(path) => path.clone(),
+            None => {
+                let path = generate_temp_path(value, &existing_file_predicate);
+                temp_paths.insert(path.clone(), value.clone());
+                path
+            }
+        };
+
+        *value = temp_path.clone();
     }
 
     for value in to_copy.values_mut() {
         if let Some(value_move) = &mut value.0
-            && !seen.insert(value_move.clone())
+            && let Some(seen_value) = seen.get(value_move)
         {
-            *value_move = temp_paths
-                .entry(value_move.clone())
-                .or_insert_with_key(|v| generate_temp_path(v, &existing_file_predicate))
-                .clone();
-        }
+            let temp_path = match seen_value {
+                Some(path) => path.clone(),
+                None => {
+                    let path = generate_temp_path(value_move, &existing_file_predicate);
+                    temp_paths.insert(path.clone(), value_move.clone());
+                    path
+                }
+            };
+
+            *value_move = temp_path.clone();
+        };
 
         for value_copy in value.1.iter_mut() {
-            if !seen.insert(value_copy.clone()) {
-                *value_copy = temp_paths
-                    .entry(value_copy.clone())
-                    .or_insert_with_key(|v| generate_temp_path(v, &existing_file_predicate))
-                    .clone();
-            }
+            let Some(seen_value) = seen.get(value_copy) else {
+                continue;
+            };
+
+            let temp_path = match seen_value {
+                Some(path) => path.clone(),
+                None => {
+                    let path = generate_temp_path(value_copy, &existing_file_predicate);
+                    temp_paths.insert(path.clone(), value_copy.clone());
+                    path
+                }
+            };
+
+            *value_copy = temp_path.clone();
+        }
+    }
+
+    for value in to_transfer.values_mut() {
+        for value_tranform in value.iter_mut() {
+            let Some(seen_value) = seen.get(value_tranform) else {
+                continue;
+            };
+
+            let temp_path = match seen_value {
+                Some(path) => path.clone(),
+                None => {
+                    let path = generate_temp_path(value_tranform, &existing_file_predicate);
+                    temp_paths.insert(path.clone(), value_tranform.clone());
+                    path
+                }
+            };
+
+            *value_tranform = temp_path.clone();
         }
     }
 
