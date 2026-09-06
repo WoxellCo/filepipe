@@ -264,8 +264,9 @@ where
 }
 
 // mk: i had to ask the rust community on discord, to fix the borrow problem, they suggested the following elegant O(n) solution
-// mk: but there's a lil issue and i can't use this
-// mk: following snippet credits: oklyth, thank you
+// mk: my original solution had O(n^2) complexity
+// mk: but there's a lil issue and i can't use this, a few small changes should be enough to fix it tho
+// mk: following snippet credits: oklyth, thank you rustacean :)
 /*fn ensure_unique(paths: &mut HashMap<Rc<str>, Rc<str>>) {
     let mut seen: HashSet<Rc<str>> = HashSet::from_iter(paths.keys().cloned());
     let mut replacements: HashMap<Rc<str>, Rc<str>> = HashMap::new();
