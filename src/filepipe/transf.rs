@@ -1,10 +1,4 @@
-use std::{
-    collections::{HashMap, HashSet},
-    rc::Rc,
-};
-
-use chrono::format::Numeric::Quarter;
-use serde::de::value;
+use std::collections::{HashMap, HashSet};
 
 use crate::{
     aio::{self, extract_path_dir_and_name},
@@ -125,9 +119,9 @@ where
                     }
                 }
             }
-        } else
-        /*if g_element.1.len() > c_element.len()*/
+        } else if g_element.1.len() > c_element.len()
         // mk: alr there are 2 ways to handle a single move, i could make an else condition and just make a move, but it still works this way
+        // mk: nvm, apparently this causes issues if there are elements to keep
         {
             // to_copy
             let mut copy_or_move = c_element.difference(g_element.1);
@@ -188,6 +182,20 @@ where
                             //copy_set.insert(g.clone());
                             copy_set.push(g.clone());
                         }
+                    }
+                }
+            }
+        } else {
+            let mut just_move = c_element.difference(g_element.1);
+            for g in g_exclusives {
+                let cm = just_move.next();
+                match cm {
+                    Some(cm) => {
+                        // move
+                        to_move.insert(cm.clone(), g.clone());
+                    }
+                    None => {
+                        // it's not supposed to end here
                     }
                 }
             }
