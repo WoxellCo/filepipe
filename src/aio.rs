@@ -1,4 +1,5 @@
 use ignore::WalkBuilder;
+use std::collections::HashMap;
 use std::io::SeekFrom;
 use std::path::{Path, PathBuf};
 use tokio::fs::File;
@@ -57,7 +58,7 @@ async fn hash_file_streaming(path: &str) -> std::io::Result<u128> {
 
 pub async fn get_file_list_in_dir_with_fpignore(
     path_dir: &str,
-) -> Result<Vec<RepositoryFile>, IOError> {
+) -> Result<HashMap<String, RepositoryFile>, IOError> {
     let mut builder = WalkBuilder::new(path_dir);
     builder
         .standard_filters(false)
@@ -67,7 +68,7 @@ pub async fn get_file_list_in_dir_with_fpignore(
 
     let root = Path::new(path_dir);
 
-    let mut entries: Vec<RepositoryFile> = Vec::new();
+    let mut entries: HashMap<String, RepositoryFile> = HashMap::new();
 
     // mk: yeah, i have to improve some things here: better error handling and push the entry struct directly without making it a mutable varibale first
     for entry in builder.build().flatten() {
@@ -106,7 +107,7 @@ pub async fn get_file_list_in_dir_with_fpignore(
 
             repository_file.hash = hex::encode(hash);
 
-            entries.push(repository_file);
+            entries.insert(file_path, repository_file);
         }
     }
 
@@ -117,7 +118,7 @@ pub fn hash_str_to_u128(hash_str: &str) -> Result<u128, ()> {
     let hash = hex::decode(hash_str).map_err(|_| ())?;
 
     let hash: [u8; 16] = match hash.as_array() {
-        Some(hash) => hash.clone(),
+        Some(hash) => *hash,
         None => {
             return Err(());
         }

@@ -174,12 +174,16 @@ impl ClientState {
         );
         let entries = get_file_list_in_dir_with_fpignore(&self.current_binding.local_path)
             .await
-            .map_err(|error| SenderError::IOError { error })?;
+            .map_err(|error| SenderError::IOError { error })?
+            .iter()
+            .map(|entry| entry.1.clone())
+            .collect();
 
+        //println!("CLIENT ENTRIES({:?})", entries);
         let entries = pack_repository_files_info(entries);
 
-        println!("{:?}", entries);
-        println!("abc {:?}", stream_type);
+        //println!("{:?}", entries);
+        //println!("abc {:?}", stream_type);
 
         match stream_type {
             StreamType::UpStream => {

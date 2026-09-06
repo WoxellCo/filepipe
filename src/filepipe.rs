@@ -72,9 +72,11 @@ pub struct UnpackError {
     pub error_kind: ErrorKind,
 }
 
-pub fn unpack_repository_files_info(data: &str) -> Result<Vec<RepositoryFile>, UnpackError> {
+pub fn unpack_repository_files_info(
+    data: &str,
+) -> Result<HashMap<String, RepositoryFile>, UnpackError> {
     let raw_files_data = data.split(";");
-    let mut files: Vec<RepositoryFile> = Vec::new();
+    let mut files: HashMap<String, RepositoryFile> = HashMap::new();
 
     for (index, raw_file_data) in raw_files_data.enumerate() {
         // mk: (full path, size in bytes (string), hash)
@@ -97,9 +99,11 @@ pub fn unpack_repository_files_info(data: &str) -> Result<Vec<RepositoryFile>, U
         }
 
         let mut file: RepositoryFile = RepositoryFile::default();
+        let mut full_path;
 
         match data_tuple.0 {
             Some(data) => {
+                full_path = data.to_string();
                 let path = extract_path_dir_and_name(data);
                 file.path_dir = path.0;
                 file.name = path.1;
@@ -114,6 +118,10 @@ pub fn unpack_repository_files_info(data: &str) -> Result<Vec<RepositoryFile>, U
                 //break;
                 return Ok(files);
             }
+        }
+
+        if full_path.starts_with('/') {
+            full_path.remove(0);
         }
 
         match data_tuple.1 {
@@ -154,7 +162,7 @@ pub fn unpack_repository_files_info(data: &str) -> Result<Vec<RepositoryFile>, U
             }
         }
 
-        files.push(file);
+        files.insert(full_path, file);
     }
 
     Ok(files)
