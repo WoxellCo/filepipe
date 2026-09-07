@@ -113,10 +113,7 @@ pub fn routes() -> Router<AppState> {
         .route("/a", put(a::put))
         .route("/a/{username}", post(a::post))
         .route("/i/{name}", get(i::get).post(i::post))
-        .route(
-            "/ss/{name}/{*path}",
-            get(ss::get).post(i::post).put(i::post),
-        )
+        .route("/ss/{name}/{*path}", get(ss::get).post(ss::post))
         .route("/hu/{name}", post(hu::post).put(hu::put))
 }
 
@@ -141,10 +138,7 @@ impl AppState {
         (Some(key.clone()), session.cloned())
     }
 
-    pub async fn get_session_by_key(
-        &self,
-        key: &str,
-    ) -> Option<Session> {
+    pub async fn get_session_by_key(&self, key: &str) -> Option<Session> {
         let sessions = self.sessions.read().await;
         let session: Option<&Session> = sessions.get(key);
         //println!("{key}");
@@ -206,6 +200,7 @@ impl AppState {
     }
 
     pub async fn gc_keys(&self) {
+        println!("executing gc...");
         let expired_access_keys: Vec<String>;
         {
             let access_keys = self.access_keys.read().await;
@@ -223,7 +218,14 @@ impl AppState {
 
             expired_sessions = sessions
                 .iter()
-                .filter(|(_, session)| session.is_expired())
+                .filter(|(_, session)| {
+                    if session.is_expired() {
+                        let _ =
+                            std::fs::remove_dir_all(format!(".fp/nt/{}", session.repository.name));
+                        return true;
+                    }
+                    false
+                })
                 .map(|(k, _)| k.clone())
                 .collect();
         }
@@ -241,6 +243,11 @@ impl AppState {
                 sessions.remove(expired);
             }
         }
+        println!(
+            "purging {} expired access keys and {} expired sessions",
+            expired_access_keys.len(),
+            expired_sessions.len()
+        );
     }
 
     pub async fn with_session_mut<F, R>(&self, key: &str, f: F) -> Option<R>
@@ -265,7 +272,7 @@ impl Session {
 impl Expirable for Session {
     fn is_expired(&self) -> bool {
         let now = Utc::now();
-        now > self.expire || now > self.last_activity + chrono::Duration::minutes(30)
+        now > self.expire || now > self.last_activity + chrono::Duration::minutes(1)
     }
 }
 

@@ -8,7 +8,7 @@ use std::{
 };
 
 use axum::{
-    body::Body,
+    body::{Body, to_bytes},
     extract::{Path, Query, State},
     http::{HeaderMap, StatusCode, header::CONTENT_TYPE},
 };
@@ -18,7 +18,7 @@ use serde_json::json;
 use axum_extra::{TypedHeader, headers::Range};
 
 use crate::endpoint::{AppState, Expirable, Session, StreamType};
-use filepipe::aio::read_chunk;
+use filepipe::aio::{self, read_chunk};
 
 /*
 #[derive(Deserialize)]
@@ -177,6 +177,7 @@ pub async fn post(
     Path((name, path)): Path<(String, String)>,
     headers: HeaderMap,
     range: Option<TypedHeader<Range>>,
+    body: Body,
 ) -> (StatusCode, HeaderMap, Body) {
     let mut headers_out = HeaderMap::new();
     let auth = headers.get("authorization");
@@ -272,6 +273,9 @@ pub async fn post(
             );
         }
     };
+
+    let content_bytes = to_bytes(body, (end - begin) as usize).await.unwrap();
+    let _ = aio::write_chunk(&path, begin, &content_bytes).await;
 
     //let (path_dir, name) = extract_path_dir_and_name(&path);
     state

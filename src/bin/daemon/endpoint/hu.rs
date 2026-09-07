@@ -15,7 +15,10 @@ use crate::endpoint::Expirable;
 
 use super::AppState;
 use filepipe::{
-    aio::{extract_path_dir_and_name, get_file_list_in_dir_with_fpignore},
+    aio::{
+        allocate_network_disk_from_transf, extract_hash_file_sizes_from_file_entries,
+        extract_path_dir_and_name, get_file_list_in_dir_with_fpignore,
+    },
     filepipe::{RepositoryFile, StreamType, transf, unpack_repository_files_info},
 };
 
@@ -178,7 +181,7 @@ pub async fn put(
         }
     };
 
-    println!("<server> CLIENT FILES: {:?}", files);
+    //println!("<server> CLIENT FILES: {:?}", files);
     //todo!("actually initialize the stream and update the app state");
 
     state
@@ -263,6 +266,13 @@ pub async fn put(
             );
         };
     }*/
+
+    allocate_network_disk_from_transf(
+        &computed_files.unwrap(),
+        &extract_hash_file_sizes_from_file_entries(&session.file_list).await,
+        &session.repository.name,
+    )
+    .await;
 
     (StatusCode::OK, headers_out, String::new())
 }

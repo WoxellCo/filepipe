@@ -262,4 +262,6 @@ impl ClientState {
 
         Ok(session_key)
     }
+
+    pub async fn queue_files() {}
 }
