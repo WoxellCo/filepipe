@@ -222,11 +222,38 @@ pub async fn put(
             }
         };
 
-    let computed_files = transf::compute(&server_repository_file_list, &files, |path| {
-        std::path::Path::exists(std::path::Path::new(path))
-    });
+    let computed_files = transf::compute(&server_repository_file_list, &files);
     println!("SERVER REPOSITORY FILES({:?})", server_repository_file_list);
     println!("{:?}", computed_files);
+
+    let Ok(mut computed_files) = computed_files else {
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            headers_out,
+            json!({"error": format!("failed to compute entries")}).to_string(),
+        );
+    };
+
+    let counters = computed_files.count();
+    let transfer: Vec<&String> = computed_files
+        .to_transfer
+        .values()
+        .filter_map(|v| v.first())
+        .collect();
+
+    let out = json!({
+        "counters": {
+            "moved": counters.1,
+            "copied": counters.2,
+            "network": counters.3,
+            "deleted": counters.4,
+        },
+        "transfer": transfer
+    });
+
+    let temp_paths = transf::filter_temp(&mut computed_files, |path| {
+        std::path::Path::exists(std::path::Path::new(path))
+    });
 
     /*for entry in session.file_list {
         if entry.size == 0 {
@@ -268,11 +295,11 @@ pub async fn put(
     }*/
 
     allocate_network_disk_from_transf(
-        &computed_files.unwrap(),
+        &computed_files,
         &extract_hash_file_sizes_from_file_entries(&session.file_list).await,
         &session.repository.name,
     )
     .await;
 
-    (StatusCode::OK, headers_out, String::new())
+    (StatusCode::OK, headers_out, out.to_string())
 }

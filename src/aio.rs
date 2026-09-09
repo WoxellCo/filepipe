@@ -7,7 +7,7 @@ use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
 use xxhash_rust::xxh3::Xxh3;
 
 use crate::filepipe::RepositoryFile;
-use crate::filepipe::transf::FileTranformations;
+use crate::filepipe::transf::{FileTranformations, TempPaths};
 
 #[derive(Debug, Clone)]
 pub enum IOError {
@@ -196,6 +196,7 @@ pub async fn allocate_network_disk_from_transf(
 
 pub async fn execute_transf_fs(
     transformations: &FileTranformations,
+    temp_paths: &TempPaths,
     repository_path: &str,
     repository_key: &str,
 ) {
@@ -235,7 +236,7 @@ pub async fn execute_transf_fs(
         tokio::fs::remove_file(d);
     }
 
-    for tp in &transformations.temp_paths {
+    for tp in temp_paths {
         tokio::fs::rename(tp.0, tp.1);
     }
 }

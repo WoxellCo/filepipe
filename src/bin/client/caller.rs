@@ -1,4 +1,4 @@
-use std::{format, println, str, sync::Arc, todo};
+use std::{collections::HashMap, format, println, str, sync::Arc, todo};
 
 use axum::http::{HeaderMap, HeaderValue, response};
 use ed25519_dalek::Signer;
@@ -18,6 +18,20 @@ pub struct ClientState {
     pub current_binding: Arc<Binding>,
 }
 
+#[derive(serde::Deserialize, Debug)]
+pub struct FileActionCounters {
+    pub moved: usize,
+    pub copied: usize,
+    pub network: usize,
+    pub deleted: usize,
+}
+
+#[derive(serde::Deserialize, Debug)]
+pub struct FileActions {
+    pub counters: FileActionCounters,
+    pub transfer: Vec<String>,
+}
+
 #[derive(Debug, Clone)]
 pub enum SenderError {
     UserDoesNotExist { username: String },
@@ -28,6 +42,12 @@ pub enum SenderError {
 
 pub type AccessKey = [u8; 16];
 pub type SessionKey = String; //[u8; 64];
+
+pub struct OpenStreamRequestInfo {
+    pub session_key: SessionKey,
+    pub actions: FileActions,
+    pub stream_type: StreamType,
+}
 
 /*#[derive(serde::Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -159,7 +179,7 @@ impl ClientState {
         &self,
         stream_type: StreamType,
         access_key: AccessKey,
-    ) -> Result<SessionKey, SenderError> {
+    ) -> Result<OpenStreamRequestInfo, SenderError> {
         let mut headers = HeaderMap::new();
         headers.insert(
             AUTHORIZATION,
@@ -184,6 +204,8 @@ impl ClientState {
 
         //println!("{:?}", entries);
         //println!("abc {:?}", stream_type);
+
+        let actions;
 
         match stream_type {
             StreamType::UpStream => {
@@ -254,13 +276,97 @@ impl ClientState {
                         message: response.text().await.unwrap(),
                     });
                 }
+
+                actions = response.json::<FileActions>().await.map_err(|err| {
+                    println!("{:?}", err);
+                    SenderError::FailedToInitializeStream {
+                        message: "idk2".to_string(),
+                    }
+                })?;
             }
             StreamType::DownStream => {
-                session_key = String::new();
+                let response = self
+                    .client
+                    .post(format!(
+                        "{}/hu/{}",
+                        self.current_binding.remote_address,
+                        self.current_binding.remote_repository_name
+                    ))
+                    .headers(headers)
+                    .send()
+                    .await
+                    .map_err(|_| SenderError::FailedToInitializeStream {
+                        message: "idk1".to_string(),
+                    })?;
+
+                if !response.status().is_success() {
+                    return Err(SenderError::FailedToInitializeStream {
+                        message: response.text().await.unwrap_or("unknown".to_string()),
+                    });
+                }
+
+                let response: Value =
+                    response
+                        .json()
+                        .await
+                        .map_err(|_| SenderError::FailedToInitializeStream {
+                            message: "idk2".to_string(),
+                        })?;
+
+                let key = match response.get("key") {
+                    Some(key) => match key.as_str() {
+                        Some(key) => key,
+                        None => {
+                            todo!("return proper error");
+                        }
+                    },
+                    None => {
+                        todo!("return proper error");
+                    }
+                };
+
+                session_key = key.to_string();
+
+                let mut headers = HeaderMap::new();
+                headers.insert(AUTHORIZATION, HeaderValue::from_str(&session_key).unwrap());
+
+                let response = self
+                    .client
+                    .put(format!(
+                        "{}/hu/{}",
+                        self.current_binding.remote_address,
+                        self.current_binding.remote_repository_name
+                    ))
+                    .headers(headers)
+                    .json(&json!({
+                        "files": entries
+                    }))
+                    .send()
+                    .await
+                    .map_err(|_| SenderError::FailedToInitializeStream {
+                        message: "idk1".to_string(),
+                    })?;
+
+                if !response.status().is_success() {
+                    return Err(SenderError::FailedToInitializeStream {
+                        message: response.text().await.unwrap(),
+                    });
+                }
+
+                actions = response.json::<FileActions>().await.map_err(|err| {
+                    println!("{:?}", err);
+                    SenderError::FailedToInitializeStream {
+                        message: "idk2".to_string(),
+                    }
+                })?;
             }
         }
 
-        Ok(session_key)
+        Ok(OpenStreamRequestInfo {
+            session_key,
+            actions,
+            stream_type,
+        })
     }
 
     pub async fn queue_files() {}

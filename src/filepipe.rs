@@ -78,6 +78,10 @@ pub fn unpack_repository_files_info(
     let raw_files_data = data.split(";");
     let mut files: HashMap<String, RepositoryFile> = HashMap::new();
 
+    if data.is_empty() || data.starts_with(';') {
+        return Ok(files);
+    }
+
     for (index, raw_file_data) in raw_files_data.enumerate() {
         // mk: (full path, size in bytes (string), hash)
         let mut data_tuple: (Option<&str>, Option<&str>, Option<&str>) = (None, None, None);

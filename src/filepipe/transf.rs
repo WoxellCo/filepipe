@@ -1,5 +1,7 @@
 use std::collections::{HashMap, HashSet};
 
+use ssh_key::authorized_keys::Entry;
+
 use crate::{
     aio::{self, extract_path_dir_and_name},
     keys::generate_random_string,
@@ -29,8 +31,9 @@ pub struct FileTranformations {
     pub to_copy: HashMap<String, (Option<String>, Vec<String>)>,
     pub to_move: HashMap<String, String>,
     pub to_transfer: HashMap<u128, Vec<String>>,
-    pub temp_paths: HashMap<String, String>,
 }
+
+pub type TempPaths = HashMap<String, String>;
 
 #[derive(Debug)]
 pub enum FileProcessError {
@@ -42,14 +45,10 @@ pub enum FileProcessError {
 
 // mk: okay, i somehow managed to do it, it was a bit tricky, i know there are better ways to achieve this, but apparently it works
 // mk: just a note for myself or others: i would consider improving this in the future
-pub fn compute<F>(
+pub fn compute(
     current_state: &HashMap<String, RepositoryFile>,
     goal_state: &HashMap<String, RepositoryFile>,
-    existing_file_predicate: F,
-) -> Result<FileTranformations, FileProcessError>
-where
-    F: Fn(&str) -> bool,
-{
+) -> Result<FileTranformations, FileProcessError> {
     let mut goal_hashes: HashMap<u128, HashSet<String>> = HashMap::new();
     let mut current_hashes: HashMap<u128, HashSet<String>> = HashMap::new();
 
@@ -202,6 +201,29 @@ where
         }
     }
 
+    Ok(FileTranformations {
+        to_delete,
+        to_keep,
+        to_copy,
+        to_move,
+        to_transfer,
+    })
+}
+
+pub fn filter_temp<F>(
+    tranformations: &mut FileTranformations,
+    existing_file_predicate: F,
+) -> HashMap<String, String>
+where
+    F: Fn(&str) -> bool,
+{
+    let mut temp_paths: TempPaths = HashMap::new();
+
+    let to_move = &mut tranformations.to_move;
+    let to_copy = &mut tranformations.to_copy;
+    let to_transfer = &mut tranformations.to_transfer;
+    let to_delete = &mut tranformations.to_delete;
+
     fn generate_temp_path<F>(path: &str, existing_predicate: F) -> String
     where
         F: Fn(&str) -> bool,
@@ -302,14 +324,7 @@ where
         }
     }
 
-    Ok(FileTranformations {
-        to_delete,
-        to_keep,
-        to_copy,
-        to_move,
-        to_transfer,
-        temp_paths,
-    })
+    temp_paths
 }
 
 // mk: i had to ask the rust community on discord, to fix the borrow problem, they suggested the following elegant O(n) solution
@@ -345,3 +360,31 @@ fn make_temporary(original: &str) -> Rc<str> {
 
     let mut temp_paths: HashMap<String, String> = HashMap::new(); // <temp_path, supposed_to_be_path>
 */
+
+impl FileTranformations {
+    // keeped, moved, copied, transfered, deleted
+    pub fn count(&self) -> (usize, usize, usize, usize, usize) {
+        let mut move_count: usize = self.to_move.len();
+        let mut copy_count: usize = 0;
+
+        for entry in self.to_copy.iter() {
+            if entry.1.0.is_some() {
+                move_count += 1;
+            }
+
+            copy_count += entry.1.1.len();
+        }
+
+        for entry in self.to_transfer.iter() {
+            copy_count += entry.1.len() - 1;
+        }
+
+        (
+            self.to_keep.len(),
+            move_count,
+            copy_count,
+            self.to_transfer.len(),
+            self.to_delete.len(),
+        )
+    }
+}

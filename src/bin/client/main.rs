@@ -1,5 +1,5 @@
 use crate::{
-    caller::ClientState,
+    caller::{ClientState, OpenStreamRequestInfo},
     config::{Binding, Config, ConfigError, init_config},
 };
 use clap::{Parser, Subcommand};
@@ -57,6 +57,46 @@ fn log_config_errors(errors: Vec<ConfigError>) {
     for error in errors {
         println!("err!");
     }
+}
+
+fn prompt_stream_confirmation(request: &OpenStreamRequestInfo) -> bool {
+    let print_action_line = |title: &str, action_counted: usize| {
+        println!(
+            "\t{:13}: {} file{}",
+            title,
+            action_counted,
+            if action_counted != 1 { 's' } else { '\0' }
+        );
+    };
+    println!(
+        "open request for {} session",
+        match request.stream_type {
+            StreamType::UpStream => "upstream",
+            StreamType::DownStream => "downstream",
+        }
+    );
+    println!();
+
+    let counters = &request.actions.counters;
+
+    println!("the following actions will be performed");
+    print_action_line("moved/renamed", counters.moved);
+    print_action_line("copied", counters.copied);
+    print_action_line("transferred", counters.network);
+    print_action_line("deleted", counters.deleted);
+    println!();
+
+    println!(
+        "the downstream endpoint will be temporarily shut down for this repository, no other upstream session and no downstream session can be opened during the operations in the current repository"
+    );
+
+    let prompt_response: bool;
+
+    loop {
+        println!("continue? [y/n]");
+    }
+
+    prompt_response
 }
 
 fn extract_config_and_command_action_or_exit_err(
@@ -138,13 +178,15 @@ async fn main() {
         }
     };
 
-    let key = match state.send_open_stream_request(stream_type, key).await {
+    let open_request = match state.send_open_stream_request(stream_type, key).await {
         Ok(key) => key,
         Err(error) => {
             println!("{:?}", error);
             exit(1);
         }
     };
+
+    let prompt_confirmation = prompt_stream_confirmation(&open_request);
 
     println!("client!! 😭");
 }
