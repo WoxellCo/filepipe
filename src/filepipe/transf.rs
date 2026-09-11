@@ -23,7 +23,7 @@ pub enum FileProcessOperation {
     Keep,
 }*/
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct FileTranformations {
     pub to_delete: HashSet<String>,
     pub to_keep: HashSet<String>,

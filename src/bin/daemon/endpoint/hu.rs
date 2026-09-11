@@ -1,6 +1,6 @@
 // head for upload
 
-use std::{format, println};
+use std::{collections::HashMap, format, println};
 
 use axum::{
     Json,
@@ -11,7 +11,7 @@ use serde::Deserialize;
 use serde_json::json;
 use tokio::fs::File;
 
-use crate::endpoint::Expirable;
+use crate::endpoint::{Expirable, FileTransfAndTemps};
 
 use super::AppState;
 use filepipe::{
@@ -184,15 +184,6 @@ pub async fn put(
     //println!("<server> CLIENT FILES: {:?}", files);
     //todo!("actually initialize the stream and update the app state");
 
-    state
-        .with_session_mut(&key, |session| {
-            //println!("111: {:?}", session.file_list);
-            session.update_last_activity();
-            session.file_list = files.iter().map(|file| file.1.clone()).collect();
-            //println!("222: {:?}", session.file_list);
-        })
-        .await;
-
     let session = match state.get_session_by_key(&key).await {
         Some(session) => session,
         None => {
@@ -234,12 +225,18 @@ pub async fn put(
         );
     };
 
+    let temp_paths = transf::filter_temp(&mut computed_files, |path| {
+        std::path::Path::exists(std::path::Path::new(path))
+    });
+
     let counters = computed_files.count();
     let transfer: Vec<&String> = computed_files
         .to_transfer
         .values()
         .filter_map(|v| v.first())
         .collect();
+
+    println!("HU: temp_paths: {:?}", temp_paths);
 
     let out = json!({
         "counters": {
@@ -248,12 +245,11 @@ pub async fn put(
             "network": counters.3,
             "deleted": counters.4,
         },
-        "transfer": transfer
+        "transfer": transfer,
+        "temps": temp_paths
     });
 
-    let temp_paths = transf::filter_temp(&mut computed_files, |path| {
-        std::path::Path::exists(std::path::Path::new(path))
-    });
+    println!("HU: temp_paths: {:?}", temp_paths);
 
     /*for entry in session.file_list {
         if entry.size == 0 {
@@ -294,12 +290,32 @@ pub async fn put(
         };
     }*/
 
-    allocate_network_disk_from_transf(
-        &computed_files,
-        &extract_hash_file_sizes_from_file_entries(&session.file_list).await,
-        &session.repository.name,
-    )
-    .await;
+    //println!("files: {:?}", files);
+    let mut hash_sizes = HashMap::new();
+
+    state
+        .with_session_mut(&key, async |session| {
+            //println!("111: {:?}", session.file_list);
+            session.update_last_activity();
+            session.file_list = files.iter().map(|file| file.1.clone()).collect();
+
+            //println!("session.file_list: {:?}", session.file_list);
+            hash_sizes = extract_hash_file_sizes_from_file_entries(&session.file_list).await;
+            //println!("hash_sizes: {:?}", hash_sizes);
+            allocate_network_disk_from_transf(
+                &computed_files,
+                &hash_sizes,
+                &session.repository.name,
+            )
+            .await;
+
+            session.file_transf_and_temps = Some(FileTransfAndTemps {
+                file_actions: computed_files,
+                file_temps: temp_paths,
+            });
+            //println!("222: {:?}", session.file_list);
+        })
+        .await;
 
     (StatusCode::OK, headers_out, out.to_string())
 }

@@ -8,6 +8,7 @@ use std::{format, path::PathBuf, println, process::exit, sync::Arc};
 
 mod caller;
 mod config;
+mod stream;
 
 #[derive(Parser)]
 struct Cli {
@@ -90,11 +91,19 @@ fn prompt_stream_confirmation(request: &OpenStreamRequestInfo) -> bool {
         "the downstream endpoint will be temporarily shut down for this repository, no other upstream session and no downstream session can be opened during the operations in the current repository"
     );
 
-    let prompt_response: bool;
-
-    loop {
+    let prompt_response: bool = loop {
         println!("continue? [y/n]");
-    }
+        let mut input = String::new();
+        std::io::stdin().read_line(&mut input).unwrap();
+
+        let input = input.trim();
+
+        if input == "y" || input == "yes" {
+            break true;
+        } else if input == "n" || input == "no" {
+            break false;
+        }
+    };
 
     prompt_response
 }
@@ -164,10 +173,11 @@ async fn main() {
         }
     }
 
-    let state = ClientState {
+    let mut state = ClientState {
         client: reqwest::Client::new(),
         config: config.clone(),
         current_binding: binding,
+        session_key: None,
     };
 
     let key = match state.authenticate(username).await {
@@ -178,7 +188,7 @@ async fn main() {
         }
     };
 
-    let open_request = match state.send_open_stream_request(stream_type, key).await {
+    let open_stream = match state.send_open_stream_request(stream_type, key).await {
         Ok(key) => key,
         Err(error) => {
             println!("{:?}", error);
@@ -186,7 +196,26 @@ async fn main() {
         }
     };
 
-    let prompt_confirmation = prompt_stream_confirmation(&open_request);
+    println!("open_stream: {:?}", open_stream);
+
+    if prompt_stream_confirmation(&open_stream) {
+        match open_stream.stream_type {
+            StreamType::UpStream => {
+                state
+                    .upstream_files(
+                        &open_stream.filtered_entries_for_network,
+                        &open_stream.actions.temps,
+                        32,
+                        async |x| {},
+                    )
+                    .await;
+            }
+            StreamType::DownStream => {}
+        }
+    } else {
+        println!("closing stream (status: canceled)...");
+        state.send_cancel_stream_request().await;
+    }
 
     println!("client!! 😭");
 }

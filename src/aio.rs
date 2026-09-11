@@ -34,6 +34,23 @@ pub async fn read_chunk(
     Ok(buffer)
 }
 
+pub async fn read_chunk_from_open_stream(
+    //state: Option<&AppState>,
+    file: &mut File,
+    offset: u64,
+    size: usize,
+) -> std::io::Result<Vec<u8>> {
+    /*if let state = Some(state) {
+        todo!("implement!!!");
+    }*/
+
+    file.seek(SeekFrom::Start(offset)).await?;
+
+    let mut buffer: Vec<u8> = vec![0u8; size];
+    file.read_exact(&mut buffer).await?;
+    Ok(buffer)
+}
+
 pub async fn write_chunk(path: &str, offset: u64, data: &[u8]) -> std::io::Result<()> {
     let mut file = OpenOptions::new().write(true).open(path).await?;
     file.seek(SeekFrom::Start(offset)).await?;
@@ -46,6 +63,13 @@ pub fn extract_path_dir_and_name(path: &str) -> (String, String) {
         Some((dir, name)) => (dir.to_owned(), name.to_owned()),
         None => (String::new(), path.to_owned()),
     }
+}
+
+pub fn compose_path_dir_and_name(dir: &str, name: &str) -> String {
+    if dir.is_empty() {
+        return name.to_string();
+    }
+    format!("{dir}/{name}")
 }
 
 async fn hash_file_streaming(path: &str) -> std::io::Result<u128> {
@@ -201,19 +225,43 @@ pub async fn execute_transf_fs(
     repository_key: &str,
 ) {
     for t in &transformations.to_move {
-        tokio::fs::rename(t.0, t.1).await;
+        tokio::fs::rename(
+            format!("{repository_path}/{}", t.0),
+            format!("{repository_path}/{}", t.1),
+        )
+        .await;
     }
 
     for t in &transformations.to_copy {
         let mut origin = t.0;
 
         if let Some(m) = &t.1.0 {
+            let path = extract_path_dir_and_name(m);
+            println!("{repository_path}/{origin}");
+            println!("1: {:?}", tokio::fs::create_dir_all(&path.0).await);
+            println!(
+                "2: {:?}",
+                tokio::fs::rename(
+                    format!("{repository_path}/{origin}"),
+                    format!("{repository_path}/{m}")
+                )
+                .await
+            );
             origin = m;
-            tokio::fs::rename(origin, m).await;
         }
 
         for c in &t.1.1 {
-            tokio::fs::copy(origin, c).await;
+            let path = extract_path_dir_and_name(c);
+            println!("{repository_path}/{origin}");
+            println!("3: {:?}", tokio::fs::create_dir_all(&path.0).await);
+            println!(
+                "4: {:?}",
+                tokio::fs::copy(
+                    format!("{repository_path}/{origin}"),
+                    format!("{repository_path}/{c}")
+                )
+                .await
+            );
         }
     }
 
@@ -227,16 +275,33 @@ pub async fn execute_transf_fs(
             if origin == e {
                 continue;
             }
-            tokio::fs::copy(&nt_path, format!("{repository_path}/{e}")).await;
+            let dest_path = format!("{repository_path}/{e}");
+            let path = extract_path_dir_and_name(&dest_path);
+            println!("DEST_PATH: {dest_path}");
+            tokio::fs::create_dir_all(&path.0).await;
+            println!("5: {:?}", tokio::fs::copy(&nt_path, &dest_path).await);
         }
-        tokio::fs::rename(nt_path, format!("{repository_path}/{origin}")).await;
+        let dest_path = format!("{repository_path}/{origin}");
+        println!("DEST_PATH (OUT): {dest_path}");
+        let path = extract_path_dir_and_name(&dest_path);
+        tokio::fs::create_dir_all(&path.0).await;
+        tokio::fs::rename(nt_path, &dest_path).await;
     }
 
     for d in &transformations.to_delete {
-        tokio::fs::remove_file(d);
+        tokio::fs::remove_file(format!("{repository_path}/{d}")).await;
     }
 
     for tp in temp_paths {
-        tokio::fs::rename(tp.0, tp.1);
+        println!(
+            "tp.0: {} | tp.1: {}",
+            format!("{repository_path}/{}", tp.0),
+            format!("{repository_path}/{}", tp.1)
+        );
+        tokio::fs::rename(
+            format!("{repository_path}/{}", tp.0),
+            format!("{repository_path}/{}", tp.1),
+        )
+        .await;
     }
 }

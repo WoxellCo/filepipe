@@ -173,7 +173,7 @@ pub async fn get(
 }
 
 pub async fn post(
-    State(mut state): State<AppState>,
+    State(state): State<AppState>,
     Path((name, path)): Path<(String, String)>,
     headers: HeaderMap,
     range: Option<TypedHeader<Range>>,
@@ -209,7 +209,7 @@ pub async fn post(
             );
         }
     };
-    let mut session = match session.1 {
+    let session = match session.1 {
         Some(session) => session,
         None => {
             headers_out.insert(CONTENT_TYPE, "application/json".parse().unwrap());
@@ -247,7 +247,26 @@ pub async fn post(
         );
     }
 
-    let full_path = format!("{}/{}", session.repository.path, path);
+    //let full_path = format!("{}/{}", session.repository.path, path);
+
+    /*println!(">> path: {path}");
+    println!("TT: {:?}", session.file_transf_and_temps);
+    let path = match session.file_transf_and_temps {
+        Some(tt) => match tt.file_temps.get(&path) {
+            Some(temp) => temp.clone(),
+            None => path.clone(),
+        },
+        None => {
+            return (
+                StatusCode::BAD_REQUEST,
+                headers_out,
+                Body::from(json!({ "error": "the files are not yet computed" }).to_string()),
+            );
+        }
+    };*/
+
+    let full_path = format!(".fp/nt/{}/{}", session.repository.name, path);
+    //println!("full_path: {full_path}");
     let metadata = match tokio::fs::metadata(&full_path).await {
         Ok(m) => m,
         Err(_) => {
@@ -275,18 +294,115 @@ pub async fn post(
     };
 
     let content_bytes = to_bytes(body, (end - begin) as usize).await.unwrap();
-    let _ = aio::write_chunk(&path, begin, &content_bytes).await;
+    //&path
+    //println!("begin: {begin}");
+    aio::write_chunk(&full_path, begin, &content_bytes)
+        .await
+        .unwrap();
 
     //let (path_dir, name) = extract_path_dir_and_name(&path);
     state
-        .with_session_mut(&key, |session| {
+        .with_session_mut(&key, async |session| {
             session.update_last_activity();
         })
         .await;
 
-    (
+    /*(
         StatusCode::INTERNAL_SERVER_ERROR,
         headers_out,
         Body::from(json!({ "error": "failed to access file in read mode" }).to_string()),
+    )*/
+
+    (
+        StatusCode::OK,
+        headers_out,
+        Body::from(json!({}).to_string()),
     )
+}
+
+// cancel stream
+pub async fn delete(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> (StatusCode, HeaderMap, String) {
+    let headers_out = HeaderMap::new();
+
+    let auth = headers.get("authorization");
+    let session_key = match auth {
+        Some(auth) => match auth.to_str() {
+            Ok(key) => key,
+            Err(_) => {
+                return (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    headers_out,
+                    json!({ "error": "an error occurred during the key conversion process" })
+                        .to_string(),
+                );
+            }
+        },
+        None => {
+            return (
+                StatusCode::UNAUTHORIZED,
+                headers_out,
+                json!({ "error": "invalid or missing session key" }).to_string(),
+            );
+        }
+    };
+
+    {
+        let mut sessions = state.sessions.write().await;
+        sessions.remove(session_key);
+    }
+
+    (StatusCode::OK, headers_out, String::new())
+}
+
+pub async fn put(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> (StatusCode, HeaderMap, String) {
+    let headers_out = HeaderMap::new();
+
+    let auth = headers.get("authorization");
+    let session_key = match auth {
+        Some(auth) => match auth.to_str() {
+            Ok(key) => key,
+            Err(_) => {
+                return (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    headers_out,
+                    json!({ "error": "an error occurred during the key conversion process" })
+                        .to_string(),
+                );
+            }
+        },
+        None => {
+            return (
+                StatusCode::UNAUTHORIZED,
+                headers_out,
+                json!({ "error": "invalid or missing session key" }).to_string(),
+            );
+        }
+    };
+
+    let mut sessions = state.sessions.write().await;
+    let Some(session) = sessions.remove(session_key) else {
+        return (StatusCode::FORBIDDEN, headers_out, String::new());
+    };
+
+    let Some(file_transf_and_paths) = session.file_transf_and_temps else {
+        return (StatusCode::BAD_REQUEST, headers_out, String::new());
+    };
+
+    println!("PUT: temp_paths: {:?}", file_transf_and_paths.file_temps);
+
+    aio::execute_transf_fs(
+        &file_transf_and_paths.file_actions,
+        &file_transf_and_paths.file_temps,
+        &session.repository.path,
+        &session.repository.name,
+    )
+    .await;
+
+    (StatusCode::OK, headers_out, String::new())
 }

@@ -3,19 +3,27 @@ use std::{collections::HashMap, format, println, str, sync::Arc, todo};
 use axum::http::{HeaderMap, HeaderValue, response};
 use ed25519_dalek::Signer;
 use filepipe::{
-    aio::{IOError, get_file_list_in_dir_with_fpignore},
-    filepipe::{StreamType, pack_repository_files_info},
+    aio::{
+        IOError, compose_path_dir_and_name, extract_path_dir_and_name,
+        get_file_list_in_dir_with_fpignore,
+    },
+    filepipe::{RepositoryFile, StreamType, pack_repository_files_info},
 };
 use reqwest::{Client, header::AUTHORIZATION};
 use serde::de::value;
 use serde_json::{Value, json};
+use tokio::sync::RwLock;
 
-use crate::config::{Binding, Config};
+use crate::{
+    config::{Binding, Config},
+    stream::{FileStream, FileStreamStatus},
+};
 
 pub struct ClientState {
     pub client: Client,
     pub config: Config,
     pub current_binding: Arc<Binding>,
+    pub session_key: Option<SessionKey>,
 }
 
 #[derive(serde::Deserialize, Debug)]
@@ -30,6 +38,7 @@ pub struct FileActionCounters {
 pub struct FileActions {
     pub counters: FileActionCounters,
     pub transfer: Vec<String>,
+    pub temps: HashMap<String, String>,
 }
 
 #[derive(Debug, Clone)]
@@ -43,10 +52,12 @@ pub enum SenderError {
 pub type AccessKey = [u8; 16];
 pub type SessionKey = String; //[u8; 64];
 
+#[derive(Debug)]
 pub struct OpenStreamRequestInfo {
     pub session_key: SessionKey,
     pub actions: FileActions,
     pub stream_type: StreamType,
+    pub filtered_entries_for_network: Vec<RepositoryFile>,
 }
 
 /*#[derive(serde::Serialize)]
@@ -176,7 +187,7 @@ impl ClientState {
     }
 
     pub async fn send_open_stream_request(
-        &self,
+        &mut self,
         stream_type: StreamType,
         access_key: AccessKey,
     ) -> Result<OpenStreamRequestInfo, SenderError> {
@@ -192,15 +203,16 @@ impl ClientState {
             "self.current_binding.local_path: {}",
             self.current_binding.local_path
         );
-        let entries = get_file_list_in_dir_with_fpignore(&self.current_binding.local_path)
-            .await
-            .map_err(|error| SenderError::IOError { error })?
-            .iter()
-            .map(|entry| entry.1.clone())
-            .collect();
+        let entries: Vec<RepositoryFile> =
+            get_file_list_in_dir_with_fpignore(&self.current_binding.local_path)
+                .await
+                .map_err(|error| SenderError::IOError { error })?
+                .iter()
+                .map(|entry| entry.1.clone())
+                .collect();
 
         //println!("CLIENT ENTRIES({:?})", entries);
-        let entries = pack_repository_files_info(entries);
+        let packed_entries = pack_repository_files_info(entries.clone());
 
         //println!("{:?}", entries);
         //println!("abc {:?}", stream_type);
@@ -263,7 +275,7 @@ impl ClientState {
                     ))
                     .headers(headers)
                     .json(&json!({
-                        "files": entries
+                        "files": packed_entries
                     }))
                     .send()
                     .await
@@ -339,7 +351,7 @@ impl ClientState {
                     ))
                     .headers(headers)
                     .json(&json!({
-                        "files": entries
+                        "files": packed_entries
                     }))
                     .send()
                     .await
@@ -362,12 +374,68 @@ impl ClientState {
             }
         }
 
+        self.session_key = Some(session_key.clone());
+
+        println!("{:?}", actions.transfer);
+
+        // mk: the filtered entries, are the entries taken from the `Vec<RepositoryFile>` that originally have
+        //     the og paths, and those that don't get transferred (not present in `actions.network`) get filtered out,
+        //     this process also converts the paths to temporary paths, and outputs the new `Vec<RepositoryFile>`
+        let filtered_entries_for_network: Vec<RepositoryFile> = entries
+            .iter()
+            .filter_map(|entry| {
+                let entry_path = compose_path_dir_and_name(&entry.path_dir, &entry.name);
+                let entry = match actions
+                    .temps
+                    .iter()
+                    .find(|(_temp_path, og_path)| **og_path == *entry_path)
+                {
+                    // mk: it's a bit confusing but this block is part of the match above (assigning `entry` with `.find()`)
+                    // mk: the tuple in `Some(x)` is the (key, value) from the `temps`, key is temp path, value is og path,
+                    Some(path) => {
+                        let (path_dir, name) = extract_path_dir_and_name(path.0);
+                        RepositoryFile {
+                            path_dir,
+                            name,
+                            ..entry.clone()
+                        }
+                    }
+                    None => entry.clone(),
+                };
+
+                let path = compose_path_dir_and_name(&entry.path_dir, &entry.name);
+
+                println!("entry_path: {entry_path}");
+                if actions.transfer.contains(&path) {
+                    Some(entry)
+                } else {
+                    None
+                }
+            })
+            //.cloned()
+            .collect();
+
         Ok(OpenStreamRequestInfo {
             session_key,
             actions,
             stream_type,
+            filtered_entries_for_network,
         })
     }
 
-    pub async fn queue_files() {}
+    pub async fn send_cancel_stream_request(&self) -> Result<(), ()> {
+        let Some(session_key) = &self.session_key else {
+            return Err(());
+        };
+
+        let mut headers = HeaderMap::new();
+        headers.insert(AUTHORIZATION, HeaderValue::from_str(session_key).unwrap());
+
+        let response = self
+            .client
+            .delete(&self.current_binding.remote_address)
+            .headers(headers);
+
+        Ok(())
+    }
 }

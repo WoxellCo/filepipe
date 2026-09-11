@@ -1,13 +1,16 @@
 use std::{collections::HashMap, sync::Arc, time};
 
 use chrono::{DateTime, Utc};
-use filepipe::filepipe::{RepositoryFile, StreamType};
+use filepipe::filepipe::{
+    RepositoryFile, StreamType,
+    transf::{FileTranformations, TempPaths},
+};
 use tokio::sync::RwLock;
 
 use axum::{
     Router,
     http::HeaderValue,
-    routing::{get, post, put},
+    routing::{delete, get, post, put},
 };
 use tokio::fs::File;
 use {
@@ -23,12 +26,19 @@ pub mod i;
 pub mod ss;
 
 #[derive(Clone, Debug)]
+pub struct FileTransfAndTemps {
+    pub file_actions: FileTranformations,
+    pub file_temps: TempPaths,
+}
+
+#[derive(Clone, Debug)]
 pub struct Session {
     pub stream_type: StreamType,
     pub repository: Arc<Repository>,
     pub expire: DateTime<Utc>,
     pub last_activity: DateTime<Utc>,
     pub file_list: Vec<RepositoryFile>,
+    pub file_transf_and_temps: Option<FileTransfAndTemps>,
 }
 
 // authentication process, before the session key the server gives to the client an access key challenge the client has to sign
@@ -99,6 +109,7 @@ impl AppState {
                         expire: Utc::now() + chrono::Duration::days(1),
                         last_activity: Utc::now(),
                         file_list: Vec::new(),
+                        file_transf_and_temps: None,
                     },
                 );
 
@@ -114,6 +125,7 @@ pub fn routes() -> Router<AppState> {
         .route("/a/{username}", post(a::post))
         .route("/i/{name}", get(i::get).post(i::post))
         .route("/ss/{name}/{*path}", get(ss::get).post(ss::post))
+        .route("/ss", delete(ss::delete).put(ss::put))
         .route("/hu/{name}", post(hu::post).put(hu::put))
 }
 
@@ -200,7 +212,7 @@ impl AppState {
     }
 
     pub async fn gc_keys(&self) {
-        println!("executing gc...");
+        //println!("executing gc...");
         let expired_access_keys: Vec<String>;
         {
             let access_keys = self.access_keys.read().await;
@@ -243,19 +255,24 @@ impl AppState {
                 sessions.remove(expired);
             }
         }
-        println!(
+        /*println!(
             "purging {} expired access keys and {} expired sessions",
             expired_access_keys.len(),
             expired_sessions.len()
-        );
+        );*/
     }
 
     pub async fn with_session_mut<F, R>(&self, key: &str, f: F) -> Option<R>
     where
-        F: FnOnce(&mut Session) -> R,
+        F: AsyncFnOnce(&mut Session) -> R,
     {
         let mut sessions = self.sessions.write().await;
-        sessions.get_mut(key).map(f)
+
+        if let Some(session) = sessions.get_mut(key) {
+            Some(f(session).await)
+        } else {
+            None
+        }
     }
 }
 
